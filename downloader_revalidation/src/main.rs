@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use mycorrhiza_common::{
     api_documentation::generate_api_docs_and_serve,
     llm_deepinfra::DEEPINFRA_API_KEY,

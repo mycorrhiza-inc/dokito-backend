@@ -1046,6 +1046,50 @@ dependencies = [
 ]
 
 [[package]]
+name = "dokito_types"
+version = "0.1.0"
+dependencies = [
+ "aide",
+ "anyhow",
+ "async-trait",
+ "aws-config",
+ "aws-sdk-s3",
+ "axum",
+ "axum-tracing-opentelemetry",
+ "base64 0.22.1",
+ "blake2",
+ "chrono",
+ "futures-util",
+ "hex",
+ "hostname",
+ "hyper 1.7.0",
+ "init-tracing-opentelemetry",
+ "mycorrhiza_common",
+ "non-empty-string",
+ "openscraper_types",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry-stdout",
+ "opentelemetry_sdk",
+ "rand",
+ "rand_core 0.9.3",
+ "reqwest",
+ "rkyv",
+ "schemars 0.9.0",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "thiserror",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "url",
+ "urlencoding",
+]
+
+[[package]]
 name = "dunce"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2046,7 +2090,6 @@ dependencies = [
 [[package]]
 name = "mycorrhiza_common"
 version = "0.1.0"
-source = "git+https://github.com/mycorrhiza-inc/common-rs.git#19adaf3fa8ad2048af772b37498276cbdc96dacb"
 dependencies = [
  "aide",
  "anyhow",
@@ -2173,6 +2216,50 @@ checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
 
 [[package]]
 name = "openscraper_downloader"
+version = "0.1.0"
+dependencies = [
+ "aide",
+ "anyhow",
+ "async-trait",
+ "aws-config",
+ "aws-sdk-s3",
+ "axum",
+ "axum-tracing-opentelemetry",
+ "base64 0.22.1",
+ "blake2",
+ "chrono",
+ "dokito_types",
+ "futures-util",
+ "hex",
+ "hostname",
+ "hyper 1.7.0",
+ "init-tracing-opentelemetry",
+ "mycorrhiza_common",
+ "non-empty-string",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry-stdout",
+ "opentelemetry_sdk",
+ "rand",
+ "rand_core 0.9.3",
+ "reqwest",
+ "rkyv",
+ "schemars 0.9.0",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "thiserror",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "url",
+ "urlencoding",
+]
+
+[[package]]
+name = "openscraper_types"
 version = "0.1.0"
 dependencies = [
  "aide",

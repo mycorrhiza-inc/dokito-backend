@@ -5,7 +5,6 @@ use mycorrhiza_common::s3_generic::cannonical_location::{
     CannonicalS3ObjectLocation, download_openscrapers_object, get_openscrapers_json_key,
 };
 use mycorrhiza_common::s3_generic::fetchers_and_getters::{S3Addr, S3DirectoryAddr};
-use mycorrhiza_common::s3_generic::s3_uri::S3LocationWithCredentials;
 use non_empty_string::non_empty_string;
 use tracing::{debug, info};
 
@@ -13,7 +12,6 @@ use crate::attachments::RawAttachment;
 use crate::env_vars::{OPENSCRAPERS_S3, OPENSCRAPERS_S3_OBJECT_BUCKET};
 use crate::jurisdictions::JurisdictionInfo;
 use crate::processed::ProcessedGenericDocket;
-use crate::raw::RawGenericDocket;
 use aws_sdk_s3::Client as S3Client;
 use mycorrhiza_common::hash::Blake2bHash;
 
@@ -41,23 +39,6 @@ pub struct DocketAddress {
     pub jurisdiction: JurisdictionInfo,
 }
 
-impl CannonicalS3ObjectLocation for RawGenericDocket {
-    type AddressInfo = DocketAddress;
-
-    fn generate_object_key(addr: &Self::AddressInfo) -> String {
-        let country = &*addr.jurisdiction.country;
-        let state = &*addr.jurisdiction.state;
-        let jurisdiction = &*addr.jurisdiction.jurisdiction;
-        let case_name = &*addr.docket_govid;
-        format!("objects_raw/{country}/{state}/{jurisdiction}/{case_name}")
-    }
-    fn generate_bucket(addr: &Self::AddressInfo) -> &'static str {
-        &OPENSCRAPERS_S3_OBJECT_BUCKET
-    }
-    fn get_credentials(addr: &Self::AddressInfo) -> &'static S3Credentials {
-        &OPENSCRAPERS_S3
-    }
-}
 impl CannonicalS3ObjectLocation for ProcessedGenericDocket {
     type AddressInfo = DocketAddress;
 
