@@ -20,6 +20,8 @@ use std::{
 };
 
 mod case_worker;
+mod data_processing_traits;
+mod openscraper_data_traits;
 mod processing;
 mod s3_stuff;
 mod server;

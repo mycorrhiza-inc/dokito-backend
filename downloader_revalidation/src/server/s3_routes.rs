@@ -16,17 +16,14 @@ use std::str::FromStr;
 use tracing::{error, info};
 
 use crate::{
+    data_processing_traits::Revalidate,
     s3_stuff::{
         DocketAddress, delete_openscrapers_s3_object, download_openscrapers_object,
         get_jurisdiction_prefix, list_processed_cases_for_jurisdiction, upload_object,
     },
     types::{
-        attachments::RawAttachment,
-        data_processing_traits::Revalidate,
-        env_vars::OPENSCRAPERS_S3_OBJECT_BUCKET,
-        jurisdictions::JurisdictionInfo,
-        pagination::{PaginationData, make_paginated_subslice},
-        processed::ProcessedGenericDocket,
+        attachments::RawAttachment, env_vars::OPENSCRAPERS_S3_OBJECT_BUCKET,
+        jurisdictions::JurisdictionInfo, processed::ProcessedGenericDocket,
     },
 };
 
@@ -212,7 +209,6 @@ pub async fn handle_caselist_jurisdiction_fetch_all(
         state,
         jurisdiction_name,
     }): Path<JurisdictionPath>,
-    Query(PaginationData { limit, offset }): Query<PaginationData>,
 ) -> impl IntoApiResponse {
     info!(state = %state, jurisdiction = %jurisdiction_name, "Request received for case list");
     let s3_client = crate::s3_stuff::make_s3_client().await;
@@ -226,11 +222,10 @@ pub async fn handle_caselist_jurisdiction_fetch_all(
     };
     let result = list_processed_cases_for_jurisdiction(&s3_client, &jur_info).await;
     info!("Completed call to s3 to get jurisdiction list.");
-    let pagination = PaginationData { limit, offset };
     match result {
         Ok(cases) => {
             info!(state = %jur_info.state, jurisdiction = %jur_info.jurisdiction, "Successfully fetched case list");
-            Json(make_paginated_subslice(pagination, &cases)).into_response()
+            Json(&cases).into_response()
         }
         Err(e) => {
             error!(state = %jur_info.state, jurisdiction = %jur_info.jurisdiction, error = %e, "Error fetching case list");

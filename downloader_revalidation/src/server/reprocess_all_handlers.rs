@@ -10,15 +10,14 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    data_processing_traits::DownloadIncomplete,
     processing::ReprocessDocketInfo,
     s3_stuff::{
         DocketAddress, download_openscrapers_object, list_processed_cases_for_jurisdiction,
         list_raw_cases_for_jurisdiction, make_s3_client, upload_object,
     },
-    types::{
-        data_processing_traits::DownloadIncomplete, jurisdictions::JurisdictionInfo,
-        processed::ProcessedGenericDocket,
-    },
+    types::jurisdictions::JurisdictionInfo,
+    types::processed::ProcessedGenericDocket,
 };
 
 const fn default_true() -> bool {

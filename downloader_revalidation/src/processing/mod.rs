@@ -1,6 +1,6 @@
+use crate::data_processing_traits::{DownloadIncomplete, ProcessFrom};
 use crate::processing::attachments::OpenscrapersExtraData;
 use crate::s3_stuff::{DocketAddress, download_openscrapers_object, make_s3_client, upload_object};
-use crate::types::data_processing_traits::{DownloadIncomplete, ProcessFrom};
 use crate::types::jurisdictions::JurisdictionInfo;
 use crate::types::processed::{ProcessedGenericAttachment, ProcessedGenericDocket};
 use crate::types::raw::RawGenericDocket;
@@ -151,7 +151,8 @@ impl ExecuteUserTask for ReprocessDocketInfo {
         if cached_docket.is_some() && self.only_process_missing {
             return Ok("Found cached case, skipping".into());
         };
-        let Ok(processed_case) = ProcessFrom::process_from(raw_case, cached_docket, ()).await;
+        let Ok(processed_case) =
+            ProcessedGenericDocket::process_from(raw_case, cached_docket, ()).await;
         tracing::info!(docket_govid=%processed_case.case_govid,"Successfully processed case");
         let upload_res = upload_object(&s3_client, &docket_address, &processed_case).await;
         map_err_as_json(upload_res)?;
