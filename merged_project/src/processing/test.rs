@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::s3_stuff::make_s3_client;
 use crate::types::jurisdictions::JurisdictionInfo;
 use crate::types::raw::{
-    RawCaseWithJurisdiction, RawGenericAttachment, RawGenericDocket, RawGenericFiling,
+    RawDocketWithJurisdiction, RawGenericAttachment, RawGenericDocket, RawGenericFiling,
 };
 use mycorrhiza_common::file_extension::{FileExtension, StaticExtension};
 
@@ -92,7 +92,7 @@ async fn test_process_case() {
     };
 
     // Top‑level case.
-    let case = RawGenericDocket {
+    let docket = RawGenericDocket {
         case_govid: non_empty_string!("TEST-CASE-123"),
         opened_date: None, // we let the scraper calculate this later
         case_name: "Example Case".to_string(),
@@ -114,7 +114,10 @@ async fn test_process_case() {
         indexed_at: Utc::now(),
     };
     let jurisdiction = JurisdictionInfo::new_usa("test", "test");
-    let _casewith = RawCaseWithJurisdiction { case, jurisdiction };
+    let _casewith = RawDocketWithJurisdiction {
+        docket,
+        jurisdiction,
+    };
 
     // let result = process_case(&casewith, &s3_client).await;
     // assert!(result.is_ok());

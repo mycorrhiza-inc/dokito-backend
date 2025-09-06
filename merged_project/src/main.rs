@@ -26,6 +26,7 @@ mod processing;
 mod s3_stuff;
 mod server;
 mod types;
+pub mod sql_ingester;
 // use opentelemetry::global::{self, BoxedTracer, ObjectSafeTracerProvider, tracer};
 
 // Note that this clones the document on each request.

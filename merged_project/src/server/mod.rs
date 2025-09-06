@@ -19,6 +19,8 @@ pub mod public_routes;
 
 static PUBLIC_SAFE_MODE: LazyLock<bool> = LazyLock::new(|| is_env_var_true("PUBLIC_SAFE_MODE"));
 
+use crate::sql_ingester::tasks::add_user_task_routes;
+
 pub fn define_routes() -> ApiRouter {
     let public_routes = public_routes::create_public_router();
     let health_routes = health_routes::create_health_and_test_router();
@@ -35,6 +37,8 @@ pub fn define_routes() -> ApiRouter {
     } else {
         info!("Public safe mode enabled, admin routes are disabled.");
     }
+
+    let app = add_user_task_routes(app);
 
     info!("Routes defined successfully");
     app
