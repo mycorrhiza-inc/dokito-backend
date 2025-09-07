@@ -1,14 +1,11 @@
 use aide::axum::IntoApiResponse;
 use axum::{Json, extract::Path};
-use dokito_types::deduplication::DoubleDeduplicated;
+use dokito_types::{deduplication::DoubleDeduplicated, env_vars::DIGITALOCEAN_S3};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{
-    server::s3_routes::JurisdictionPath,
-    types::{env_vars::DIGITALOCEAN_S3, jurisdictions::JurisdictionInfo},
-};
+use crate::{server::s3_routes::JurisdictionPath, types::jurisdictions::JurisdictionInfo};
 
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
 struct JuristdictionCaselistBreakdown {
