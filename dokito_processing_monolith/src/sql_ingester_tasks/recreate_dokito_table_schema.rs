@@ -44,7 +44,7 @@ pub async fn recreate_schema() -> anyhow::Result<()> {
     let pool = PgPoolOptions::new().connect(db_url).await?;
     info!("Created pg pool");
 
-    let mut migrator = sqlx::migrate!("./complete_migrations");
+    let mut migrator = sqlx::migrate!("./src/sql_ingester_tasks/migrations");
 
     let num_migrations = migrator.iter().count();
     info!(%num_migrations,"Created sqlx migrator");
@@ -63,19 +63,15 @@ pub async fn recreate_schema() -> anyhow::Result<()> {
 
 pub async fn drop_existing_schema(pool: &PgPool, _migrator: &mut Migrator) -> anyhow::Result<()> {
     // migrator.set_ignore_missing(true).undo(pool, 0).await?;
-    pool.execute(include_str!(
-        "../../complete_migrations/001_dokito_complete.down.sql"
-    ))
-    .await?;
+    pool.execute(include_str!("./migrations/001_dokito_complete.down.sql"))
+        .await?;
     Ok(())
 }
 
 pub async fn create_schema(pool: &PgPool, _migrator: &mut Migrator) -> anyhow::Result<()> {
     // migrator.set_ignore_missing(true).run(pool).await?;
 
-    pool.execute(include_str!(
-        "../../complete_migrations/001_dokito_complete.up.sql"
-    ))
-    .await?;
+    pool.execute(include_str!("./migrations/001_dokito_complete.up.sql"))
+        .await?;
     Ok(())
 }

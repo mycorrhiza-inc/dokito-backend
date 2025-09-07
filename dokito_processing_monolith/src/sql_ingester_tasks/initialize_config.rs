@@ -1,7 +1,6 @@
 use async_trait::async_trait;
+use dokito_types::env_vars::{DIGITALOCEAN_S3, DIGITALOCEAN_S3_OBJECT_BUCKET};
 use mycorrhiza_common::tasks::{ExecuteUserTask, display_error_as_json};
-
-use crate::types::s3_stuff::{DIGITALOCEAN_S3, OPENSCRAPERS_S3_BUCKET};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -28,7 +27,7 @@ impl ExecuteUserTask for InitializeConfig {
 
 async fn make_openscrapers_public() -> Result<(), serde_json::Value> {
     let digitalocean_client = DIGITALOCEAN_S3.make_s3_client().await;
-    let bucket = &**OPENSCRAPERS_S3_BUCKET;
+    let bucket = &**DIGITALOCEAN_S3_OBJECT_BUCKET;
     let policy = serde_json::json!({
         "Version": "2012-10-17",
         "Statement": [
@@ -65,9 +64,9 @@ use tracing::info;
 pub async fn test_s3_client_permissions() {
     // Initialise the client once – it is reused for all requests.
     let digitalocean_client = DIGITALOCEAN_S3.make_s3_client().await;
-    // `OPENSCRAPERS_S3_BUCKET` is a `Lazy<String>`/`Arc<String>` in the original code,
+    // `DIGITALOCEAN_S3_BUCKET` is a `Lazy<String>`/`Arc<String>` in the original code,
     // `&**` dereferences it to a plain `&str`.
-    let bucket = &**OPENSCRAPERS_S3_BUCKET;
+    let bucket = &**DIGITALOCEAN_S3_OBJECT_BUCKET;
 
     // -------------------------------------------------------------------------
     // 1️⃣  List buckets

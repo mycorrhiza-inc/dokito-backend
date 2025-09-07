@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 pub mod attachments;
 pub mod deduplication;
 pub mod env_vars;

@@ -1,6 +1,12 @@
 use std::{collections::HashSet, env, mem::take, sync::LazyLock};
 
 use async_trait::async_trait;
+use dokito_types::{
+    env_vars::DIGITALOCEAN_S3,
+    jurisdictions::JurisdictionInfo,
+    processed::{OrgName, ProcessedGenericDocket},
+    s3_stuff::list_processed_cases_for_jurisdiction,
+};
 use futures::stream::{self, StreamExt};
 use rand::{SeedableRng, rngs::SmallRng, seq::SliceRandom};
 use reqwest::Client;
@@ -11,8 +17,6 @@ use sqlx::{PgPool, Pool, Postgres, postgres::PgPoolOptions, types::Uuid};
 
 use mycorrhiza_common::{misc::map_empty, tasks::ExecuteUserTask};
 use tracing::{info, warn};
-
-use crate::types::openscrapers::{OrgName, ProcessedGenericDocket};
 
 #[derive(Clone, Copy, Default, Deserialize, JsonSchema)]
 pub struct NyPucIngestPurgePrevious {}
@@ -92,12 +96,10 @@ pub async fn get_all_ny_puc_data(purge_data: bool) -> anyhow::Result<()> {
     // We can set this to always true since we just purged the dataset.
     let ignore_existing = true;
     // Get the list of case IDs
-    let mut case_govids: Vec<String> = reqwest_client
-        .get("http://localhost:33399/public/caselist/ny/ny_puc/all")
-        .send()
-        .await?
-        .json()
-        .await?;
+    let ny_jurisdiction = JurisdictionInfo::new_usa("ny_puc", "ny");
+    let s3_client = DIGITALOCEAN_S3.make_s3_client().await;
+    let mut case_govids: Vec<String> =
+        list_processed_cases_for_jurisdiction(&s3_client, &ny_jurisdiction).await?;
     info!(length=%case_govids.len(),"Got list of all cases");
 
     if ignore_existing {

@@ -1,7 +1,4 @@
-use aide::axum::{
-    routing::delete,
-    ApiRouter,
-};
+use aide::axum::{ApiRouter, routing::delete};
 use mycorrhiza_common::misc::is_env_var_true;
 use std::sync::LazyLock;
 use tracing::info;
@@ -19,13 +16,13 @@ pub mod public_routes;
 
 static PUBLIC_SAFE_MODE: LazyLock<bool> = LazyLock::new(|| is_env_var_true("PUBLIC_SAFE_MODE"));
 
-use crate::sql_ingester::tasks::add_user_task_routes;
-
 pub fn define_routes() -> ApiRouter {
     let public_routes = public_routes::create_public_router();
     let health_routes = health_routes::create_health_and_test_router();
 
-    let mut app = ApiRouter::new().merge(health_routes).nest("/public", public_routes);
+    let mut app = ApiRouter::new()
+        .merge(health_routes)
+        .nest("/public", public_routes);
 
     if !*PUBLIC_SAFE_MODE {
         info!("Public safe mode disabled, admin routes are enabled.");
@@ -38,7 +35,7 @@ pub fn define_routes() -> ApiRouter {
         info!("Public safe mode enabled, admin routes are disabled.");
     }
 
-    let app = add_user_task_routes(app);
+    // let app = add_user_task_routes(app);
 
     info!("Routes defined successfully");
     app

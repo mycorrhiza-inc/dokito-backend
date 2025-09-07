@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use crate::{
     server::s3_routes::JurisdictionPath,
-    types::{env_vars::OPENSCRAPERS_S3, jurisdictions::JurisdictionInfo},
+    types::{env_vars::DIGITALOCEAN_S3, jurisdictions::JurisdictionInfo},
 };
 
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
@@ -32,7 +32,7 @@ pub async fn get_completed_casedata_differential(
             Some((govid.to_string(), value))
         })
         .collect::<Vec<_>>();
-    let s3_client = OPENSCRAPERS_S3.make_s3_client().await;
+    let s3_client = DIGITALOCEAN_S3.make_s3_client().await;
     let country = "usa".to_string(); // Or get from somewhere else
     let jur_info = JurisdictionInfo {
         state,

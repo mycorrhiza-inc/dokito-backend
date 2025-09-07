@@ -44,7 +44,7 @@
 // }
 //
 // async fn reparse_clean_jurisdiction(jur_info: JurisdictionInfo) -> anyhow::Result<()> {
-//     let s3_client = OPENSCRAPERS_S3.make_s3_client().await;
+//     let s3_client = DIGITALOCEAN_S3.make_s3_client().await;
 //     let docketlist = list_cases_for_jurisdiction(&s3_client, &jur_info).await?;
 //     let docket_closure = async |docket_govid: &String| {
 //         let _ = reparse_clean_docket(&s3_client, docket_govid, &jur_info).await;
@@ -67,7 +67,7 @@
 //         // Clean docket if fetch failed.
 //         let docket_key = get_case_s3_key(docket_govid, jur_info);
 //         tracing::warn!(%docket_govid, %docket_key,"Could not properly serialize docket, deleting out of an abundance of caution.");
-//         S3Addr::new(s3_client, &OPENSCRAPERS_S3_OBJECT_BUCKET, &docket_key)
+//         S3Addr::new(s3_client, &DIGITALOCEAN_S3_OBJECT_BUCKET, &docket_key)
 //             .delete_file()
 //             .await?;
 //         return Ok(());

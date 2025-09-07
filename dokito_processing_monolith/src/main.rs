@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use mycorrhiza_common::{
     api_documentation::generate_api_docs_and_serve,
     llm_deepinfra::DEEPINFRA_API_KEY,
@@ -9,7 +10,7 @@ use tracing::info;
 
 use crate::{
     server::define_routes,
-    types::env_vars::{OPENSCRAPERS_S3, OPENSCRAPERS_S3_OBJECT_BUCKET},
+    types::env_vars::{DIGITALOCEAN_S3, DIGITALOCEAN_S3_OBJECT_BUCKET},
 };
 use axum::extract::DefaultBodyLimit;
 use tower_http::cors::{Any, CorsLayer};
@@ -25,8 +26,8 @@ mod openscraper_data_traits;
 mod processing;
 mod s3_stuff;
 mod server;
+pub mod sql_ingester_tasks;
 mod types;
-pub mod sql_ingester;
 // use opentelemetry::global::{self, BoxedTracer, ObjectSafeTracerProvider, tracer};
 
 // Note that this clones the document on each request.
@@ -43,8 +44,8 @@ static PORT: LazyLock<u16> = LazyLock::new(|| {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _ = *OPENSCRAPERS_S3;
-    let _ = *OPENSCRAPERS_S3_OBJECT_BUCKET;
+    let _ = *DIGITALOCEAN_S3;
+    let _ = *DIGITALOCEAN_S3_OBJECT_BUCKET;
     let _ = *DEEPINFRA_API_KEY;
     if let Err(e) = do_i_have_internet() {
         tracing::error!(err = %e,"NO INTERNET DETECTED");
