@@ -72,6 +72,10 @@ impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
         cached: Option<Self>,
         _: Self::ExtraData,
     ) -> Result<Self, Self::ParseError> {
+        let object_uuid = cached
+            .as_ref()
+            .map(|v| v.object_uuid)
+            .unwrap_or_else(|| Uuid::new_v4());
         let opened_date_from_fillings = {
             let original_date = input.opened_date;
             let mut min_date = original_date;
@@ -96,21 +100,27 @@ impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
         let cached_fillings = cached.map(|d| d.filings);
         let matched_fillings =
             match_raw_fillings_to_processed_fillings(input.filings, cached_fillings);
-        let processed_fillings = stream::iter(matched_fillings.into_iter())
+        let mut processed_fillings = stream::iter(matched_fillings.into_iter())
             .enumerate()
             .map(|(index, (f_raw, f_cached))| {
                 let filling_index_data = IndexExtraData {
                     index: index as u64,
                 };
                 async {
-                    ProcessedGenericFiling::process_from(f_raw, f_cached, filling_index_data).await
+                    let res =
+                        ProcessedGenericFiling::process_from(f_raw, f_cached, filling_index_data)
+                            .await;
+                    let Ok(val) = res;
+                    val
                 }
             })
             .buffer_unordered(5)
             .collect::<Vec<_>>()
             .await;
+        processed_fillings.sort_by_key(|v| v.index_in_docket);
         let llmed_petitioner_list = split_and_fix_author_blob(&input.petitioner).await;
         let final_processed_docket = ProcessedGenericDocket {
+            object_uuid,
             processed_at: Utc::now(),
             case_govid: input.case_govid.clone(),
             filings: processed_fillings,
@@ -122,7 +132,7 @@ impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
             case_subtype: input.case_subtype.clone(),
             indexed_at: input.indexed_at,
             closed_date: input.closed_date,
-            case_parties: todo!(),
+            case_parties: vec![],
             description: input.description.clone(),
             extra_metadata: input.extra_metadata.clone(),
             hearing_officer: input.hearing_officer.clone(),

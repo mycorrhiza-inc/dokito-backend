@@ -67,7 +67,7 @@ async fn generate_attachment_url_index() -> anyhow::Result<AttachIndex> {
         .into_iter()
         .filter_map(|r| match r {
             Ok(att) => Some((att.url.clone(), att)),
-            Err(e) => None,
+            Err(_err) => None,
         })
         .collect();
     Ok(map)

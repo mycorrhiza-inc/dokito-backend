@@ -52,21 +52,25 @@ fn match_individual_attach<'a>(
 }
 pub fn match_raw_fillings_to_processed_fillings(
     raw_fillings: Vec<RawGenericFiling>,
-    processed_fillings: Option<HashMap<Uuid, ProcessedGenericFiling>>,
+    processed_fillings: Option<Vec<ProcessedGenericFiling>>,
 ) -> Vec<(RawGenericFiling, Option<ProcessedGenericFiling>)> {
-    let Some(mut processed_fillings) = processed_fillings else {
+    let Some(processed_fillings) = processed_fillings.filter(|v| !v.is_empty()) else {
         return raw_fillings
             .into_iter()
             .map(|filling| (filling, None))
             .collect();
     };
+    let mut processed_filling_map = processed_fillings
+        .into_iter()
+        .map(|f| (f.object_uuid, f))
+        .collect();
     let mut return_vec = Vec::with_capacity(raw_fillings.len());
     for attach in raw_fillings {
-        let processed_option = match_individual_filling(&attach, &processed_fillings);
+        let processed_option = match_individual_filling(&attach, &processed_filling_map);
 
         if let Some(processed_actual) = processed_option {
             let attach_id = processed_actual.object_uuid;
-            let proc_attach_owned = processed_fillings.remove(&attach_id);
+            let proc_attach_owned = processed_filling_map.remove(&attach_id);
             return_vec.push((attach, proc_attach_owned))
         } else {
             return_vec.push((attach, None))
