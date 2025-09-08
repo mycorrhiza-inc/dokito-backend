@@ -5,13 +5,15 @@ use mycorrhiza_common::{file_extension::FileExtension, hash::Blake2bHash};
 use non_empty_string::NonEmptyString;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct ProcessedGenericAttachment {
     pub name: String,
-    pub openscrapers_attachment_id: u64,
     pub index_in_filling: u64,
     pub document_extension: FileExtension,
+    #[serde(default)]
+    pub object_uuid: Uuid,
     #[serde(default)]
     pub attachment_govid: String,
     #[serde(default)]
@@ -35,10 +37,11 @@ pub struct OrgName {
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct ProcessedGenericFiling {
     pub filed_date: Option<NaiveDate>,
-    pub openscrapers_filling_id: u64,
     pub index_in_docket: u64,
     #[serde(default)]
     pub filling_govid: String,
+    #[serde(default)]
+    pub object_uuid: Uuid,
     #[serde(default)]
     pub name: String,
     #[serde(default)]
@@ -50,7 +53,7 @@ pub struct ProcessedGenericFiling {
     #[serde(default)]
     pub description: String,
     #[serde(default)]
-    pub attachments: HashMap<u64, ProcessedGenericAttachment>,
+    pub attachments: Vec<ProcessedGenericAttachment>,
     #[serde(default)]
     pub extra_metadata: HashMap<String, serde_json::Value>,
 }
@@ -69,6 +72,8 @@ pub struct ProcessedGenericDocket {
     #[serde(default)]
     pub opened_date: NaiveDate,
     #[serde(default)]
+    pub object_uuid: Uuid,
+    #[serde(default)]
     pub case_name: String,
     #[serde(default)]
     pub case_url: String,
@@ -82,15 +87,12 @@ pub struct ProcessedGenericDocket {
     pub industry: String,
     #[serde(default)]
     pub petitioner_list: Vec<OrgName>,
-    // Depricated field, use petitioner_list instead
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub petitioner: String,
     #[serde(default)]
     pub hearing_officer: String,
     #[serde(default)]
     pub closed_date: Option<NaiveDate>,
     #[serde(default)]
-    pub filings: HashMap<u64, ProcessedGenericFiling>,
+    pub filings: Vec<ProcessedGenericFiling>,
     #[serde(default)]
     pub case_parties: Vec<ProcessedGenericParty>,
     #[serde(default)]

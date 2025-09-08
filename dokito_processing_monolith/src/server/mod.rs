@@ -3,6 +3,8 @@ use mycorrhiza_common::misc::is_env_var_true;
 use std::sync::LazyLock;
 use tracing::info;
 
+use crate::sql_ingester_tasks::add_sql_ingest_task_routes;
+
 pub mod direct_file_fetch;
 pub mod queue_routes;
 pub mod reprocess_all_handlers;
@@ -35,7 +37,7 @@ pub fn define_routes() -> ApiRouter {
         info!("Public safe mode enabled, admin routes are disabled.");
     }
 
-    // let app = add_user_task_routes(app);
+    let app = add_sql_ingest_task_routes(app);
 
     info!("Routes defined successfully");
     app

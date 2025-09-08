@@ -1,14 +1,12 @@
 use crate::data_processing_traits::DownloadIncomplete;
 use crate::processing::file_fetching::{FileDownloadError, RequestMethod};
-use crate::processing::{CrimsonInitialResponse, CrimsonPDFIngestParamsS3, CrimsonStatusResponse};
 use crate::s3_stuff::{
     generate_s3_object_uri_from_key, get_raw_attach_file_key, get_s3_json_uri,
     push_raw_attach_file_to_s3, upload_object,
 };
-use crate::types::env_vars::CRIMSON_URL;
 use crate::types::processed::ProcessedGenericAttachment;
 use crate::types::{attachments::RawAttachment, jurisdictions::JurisdictionInfo};
-use anyhow::{anyhow, bail};
+use anyhow::anyhow;
 use aws_sdk_s3::Client as S3Client;
 use chrono::Utc;
 use mycorrhiza_common::file_extension::FileExtension;

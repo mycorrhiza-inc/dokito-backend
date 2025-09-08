@@ -15,7 +15,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use sqlx::{PgPool, Pool, Postgres, postgres::PgPoolOptions, types::Uuid};
 
-use mycorrhiza_common::{misc::map_empty, tasks::ExecuteUserTask};
+use mycorrhiza_common::tasks::ExecuteUserTask;
 use tracing::{info, warn};
 
 #[derive(Clone, Copy, Default, Deserialize, JsonSchema)]
@@ -285,7 +285,7 @@ pub async fn ingest_nypuc_case(
         .await?;
     }
 
-    for (_, filling) in case.filings.iter() {
+    for filling in case.filings.iter() {
         let individual_author_strings = filling
             .individual_authors
             .iter()
@@ -297,7 +297,7 @@ pub async fn ingest_nypuc_case(
             .map(|s| s.name.to_string())
             .collect::<Vec<_>>();
         let filling_uuid: Uuid = sqlx::query_scalar!(
-            "INSERT INTO fillings (docket_uuid, docket_govid, individual_author_strings, organization_author_strings, filed_date, filling_type, filling_name, filling_description, openscrapers_id)
+            "INSERT INTO fillings (docket_uuid, docket_govid, individual_author_strings, organization_author_strings, filed_date, filling_type, filling_name, filling_description)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING uuid",
             docket_uuid,
             &case.case_govid.as_str(),
@@ -307,12 +307,11 @@ pub async fn ingest_nypuc_case(
             &filling.filing_type,
             &filling.name,
             &filling.description,
-            &filling.openscrapers_filling_id.to_string(),
         )
         .fetch_one(pool)
         .await?;
 
-        for (_, attachment) in filling.attachments.iter() {
+        for attachment in filling.attachments.iter() {
             let hashstr = if let Some(hash) = attachment.hash {
                 hash.to_string()
             } else {

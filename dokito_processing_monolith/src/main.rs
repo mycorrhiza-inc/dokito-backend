@@ -22,11 +22,12 @@ use std::{
 
 mod case_worker;
 mod data_processing_traits;
+mod indexes;
 mod openscraper_data_traits;
 mod processing;
 mod s3_stuff;
 mod server;
-pub mod sql_ingester_tasks;
+mod sql_ingester_tasks;
 mod types;
 // use opentelemetry::global::{self, BoxedTracer, ObjectSafeTracerProvider, tracer};
 

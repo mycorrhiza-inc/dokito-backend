@@ -26,10 +26,10 @@ impl CannonicalS3ObjectLocation for RawAttachment {
     fn generate_object_key(hash: &Self::AddressInfo) -> String {
         format!("raw/metadata/{hash}.json")
     }
-    fn generate_bucket(addr: &Self::AddressInfo) -> &'static str {
+    fn generate_bucket(_addr: &Self::AddressInfo) -> &'static str {
         &DIGITALOCEAN_S3_OBJECT_BUCKET
     }
-    fn get_credentials(addr: &Self::AddressInfo) -> &'static S3Credentials {
+    fn get_credentials(_addr: &Self::AddressInfo) -> &'static S3Credentials {
         &DIGITALOCEAN_S3
     }
 }
@@ -49,10 +49,10 @@ impl CannonicalS3ObjectLocation for ProcessedGenericDocket {
         let case_name = &*addr.docket_govid;
         format!("objects/{country}/{state}/{jurisdiction}/{case_name}")
     }
-    fn generate_bucket(addr: &Self::AddressInfo) -> &'static str {
-        &**DIGITALOCEAN_S3_OBJECT_BUCKET
+    fn generate_bucket(_: &Self::AddressInfo) -> &'static str {
+        &DIGITALOCEAN_S3_OBJECT_BUCKET
     }
-    fn get_credentials(addr: &Self::AddressInfo) -> &'static S3Credentials {
+    fn get_credentials(_: &Self::AddressInfo) -> &'static S3Credentials {
         &DIGITALOCEAN_S3
     }
 }

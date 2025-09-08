@@ -1,6 +1,6 @@
 use aide::{self, axum::IntoApiResponse, transform::TransformOperation};
 use axum::{
-    extract::{Path, Query},
+    extract::Path,
     http::HeaderValue,
     response::{IntoResponse, Json},
 };

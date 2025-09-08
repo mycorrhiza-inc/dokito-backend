@@ -13,7 +13,7 @@ pub mod initialize_config;
 pub mod nypuc_ingest;
 pub mod recreate_dokito_table_schema;
 
-pub fn add_user_task_routes(router: ApiRouter) -> ApiRouter {
+pub fn add_sql_ingest_task_routes(router: ApiRouter) -> ApiRouter {
     let router = declare_default_task_route::<NyPucIngestPurgePrevious>(router);
     let router = declare_default_task_route::<NyPucIngestGetMissingDockets>(router);
     let router = declare_default_task_route::<InitializeConfig>(router);

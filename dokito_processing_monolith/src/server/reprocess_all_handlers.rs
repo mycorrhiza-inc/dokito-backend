@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use aws_sdk_s3::Client;
 use axum::Json;
@@ -70,7 +70,7 @@ async fn get_initial_govid_list_to_process(
     jur_info: &JurisdictionInfo,
     only_process_missing: bool,
 ) -> anyhow::Result<Vec<String>> {
-    let mut raw_caselist = list_raw_cases_for_jurisdiction(s3_client, jur_info).await?;
+    let raw_caselist = list_raw_cases_for_jurisdiction(s3_client, jur_info).await?;
     if !only_process_missing {
         return Ok(raw_caselist);
     }

@@ -1,9 +1,11 @@
+use std::mem::take;
 use std::{collections::HashMap, convert::Infallible};
 
 use chrono::{NaiveDate, Utc};
 use futures_util::{StreamExt, stream};
 use rand::random;
 use tracing::warn;
+use uuid::Uuid;
 
 use crate::data_processing_traits::{ProcessFrom, Revalidate, RevalidationOutcome};
 use crate::processing::llm_prompts::{clean_up_author_list, split_and_fix_author_blob};
@@ -18,11 +20,9 @@ use crate::types::raw::{RawGenericAttachment, RawGenericDocket, RawGenericFiling
 impl Revalidate for ProcessedGenericDocket {
     async fn revalidate(&mut self) -> RevalidationOutcome {
         let mut did_change = RevalidationOutcome::NoChanges;
-        if !self.petitioner.is_empty() {
-            did_change = RevalidationOutcome::DidChange;
-            let petitioner_list = split_and_fix_author_blob(&self.petitioner).await;
-            self.petitioner_list = petitioner_list;
-            self.petitioner = String::new();
+        if self.object_uuid.is_nil() {
+            self.object_uuid = Uuid::new_v4();
+            did_change = RevalidationOutcome::DidChange
         }
         if self.case_subtype.is_empty() {
             let x = self.case_type.split("-").collect::<Vec<_>>();
@@ -34,17 +34,9 @@ impl Revalidate for ProcessedGenericDocket {
                 did_change = RevalidationOutcome::DidChange;
             }
         };
-        let original_keys = self.filings.keys().copied().collect::<Vec<_>>();
-        for orig_key in original_keys {
-            if let Some(mut filling) = self.filings.remove(&orig_key) {
-                let revalidate_result = filling.revalidate().await;
-                let push_key = filling.openscrapers_filling_id;
-                did_change = did_change.or(&revalidate_result);
-                if push_key != orig_key {
-                    did_change = did_change.or(&RevalidationOutcome::DidChange)
-                }
-                self.filings.insert(push_key, filling);
-            }
+        for filling in self.filings.iter_mut() {
+            let did_filling_change = filling.revalidate().await;
+            did_change = did_change.or(&did_filling_change);
         }
         did_change
     }
@@ -54,13 +46,13 @@ impl Revalidate for ProcessedGenericFiling {
     async fn revalidate(&mut self) -> RevalidationOutcome {
         let mut did_change = RevalidationOutcome::NoChanges;
         // Chance of this happening is around 1 in 3 quadrillion
-        if self.openscrapers_filling_id <= 10_000 {
-            self.openscrapers_filling_id = random();
+        if self.object_uuid.is_nil() {
+            self.object_uuid = Uuid::new_v4();
             did_change = RevalidationOutcome::DidChange
         }
         // Name stuff
         if self.name.is_empty() {
-            for (_, attach) in self.attachments.iter() {
+            for attach in self.attachments.iter() {
                 if !attach.name.is_empty() {
                     self.name = attach.name.clone();
                     did_change = RevalidationOutcome::DidChange;
@@ -117,17 +109,11 @@ impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
             .buffer_unordered(5)
             .collect::<Vec<_>>()
             .await;
-        let mut proc_filling_map = HashMap::new();
-        for filling in processed_fillings {
-            // Destructure here is fine since the filling process cannot error out.
-            let Ok(filling) = filling;
-            proc_filling_map.insert(filling.openscrapers_filling_id, filling);
-        }
         let llmed_petitioner_list = split_and_fix_author_blob(&input.petitioner).await;
         let final_processed_docket = ProcessedGenericDocket {
             processed_at: Utc::now(),
             case_govid: input.case_govid.clone(),
-            filings: proc_filling_map,
+            filings: processed_fillings,
             opened_date: opened_date_from_fillings,
             case_name: input.case_name.clone(),
             case_url: input.case_url.clone(),
@@ -141,8 +127,6 @@ impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
             extra_metadata: input.extra_metadata.clone(),
             hearing_officer: input.hearing_officer.clone(),
             petitioner_list: llmed_petitioner_list,
-            // Depricated fields
-            petitioner: Default::default(),
         };
         Ok(final_processed_docket)
     }
@@ -159,13 +143,13 @@ impl ProcessFrom<RawGenericFiling> for ProcessedGenericFiling {
             processed_attach_map,
             cached_orgauthorlist,
             cached_individualauthorllist,
-            cached_openscrapers_id,
+            cached_filling_uuid,
         ) = match cached {
             Some(filling) => (
                 Some(filling.attachments),
                 Some(filling.organization_authors),
                 Some(filling.individual_authors),
-                Some(filling.openscrapers_filling_id),
+                Some(filling.object_uuid),
             ),
             None => (None, None, None, None),
         };
@@ -216,14 +200,14 @@ impl ProcessFrom<RawGenericFiling> for ProcessedGenericFiling {
                 clean_up_author_list(input.individual_authors)
             }
         };
-        let openscrapers_id = cached_openscrapers_id.unwrap_or_else(random);
+        let new_filling_uuid = cached_filling_uuid.unwrap_or_else(|| Uuid::new_v4());
 
         let proc_filling = Self {
             // NOTE TO SELF: Using a u64 as a unique identifier does work, but it can cause bugs
             // because its possible to sub in non unique u64's (such as the index_data.index)
             // so even though its an extra dependancy and 128 bits of randomness is excessive, using
             // a UUID would avoid these bugs.
-            openscrapers_filling_id: openscrapers_id,
+            object_uuid: new_filling_uuid,
             filed_date: input.filed_date,
             index_in_docket: index_data.index,
             attachments: proc_attach_map,
@@ -250,13 +234,13 @@ impl ProcessFrom<RawGenericAttachment> for ProcessedGenericAttachment {
         cached: Option<Self>,
         index_data: Self::ExtraData,
     ) -> Result<Self, Self::ParseError> {
-        let id = cached
+        let uuid = cached
             .as_ref()
-            .map(|val| val.openscrapers_attachment_id)
-            .unwrap_or(random());
+            .map(|val| val.object_uuid)
+            .unwrap_or_else(|| Uuid::new_v4());
         let hash = (input.hash).or_else(|| cached.and_then(|v| v.hash));
         let return_res = Self {
-            openscrapers_attachment_id: id,
+            object_uuid: uuid,
             index_in_filling: index_data.index,
             name: input.name.clone(),
             document_extension: input.document_extension.clone(),
