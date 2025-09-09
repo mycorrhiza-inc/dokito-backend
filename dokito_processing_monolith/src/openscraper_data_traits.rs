@@ -167,29 +167,27 @@ impl ProcessFrom<RawGenericFiling> for ProcessedGenericFiling {
             match_raw_attaches_to_processed_attaches(input.attachments, processed_attach_map);
         // Async match the raw attachments with the cached versions, and process them async 5 at a
         // time.
-        let processed_attachments = stream::iter(matched_attach_list.into_iter())
+        let mut processed_attachments = stream::iter(matched_attach_list.into_iter())
             .enumerate()
             .map(|(attach_index, (raw_attach, cached_attach))| {
                 let attach_index_data = IndexExtraData {
                     index: attach_index as u64,
                 };
                 async {
-                    ProcessedGenericAttachment::process_from(
+                    let res = ProcessedGenericAttachment::process_from(
                         raw_attach,
                         cached_attach,
                         attach_index_data,
                     )
-                    .await
+                    .await;
+                    let Ok(val) = res;
+                    val
                 }
             })
             .buffer_unordered(5)
             .collect::<Vec<_>>()
             .await;
-        let mut proc_attach_map = HashMap::new();
-        for attach in processed_attachments {
-            let Ok(attach) = attach;
-            proc_attach_map.insert(attach.openscrapers_attachment_id, attach);
-        }
+        processed_attachments.sort_by_key(|att| att.index_in_filling);
         // Process org and individual author names.
         let organization_authors = {
             if let Some(org_authors) = cached_orgauthorlist {
@@ -220,7 +218,7 @@ impl ProcessFrom<RawGenericFiling> for ProcessedGenericFiling {
             object_uuid: new_filling_uuid,
             filed_date: input.filed_date,
             index_in_docket: index_data.index,
-            attachments: proc_attach_map,
+            attachments: processed_attachments,
             name: input.name.clone(),
             filling_govid: input.filling_govid.clone(),
             filing_type: input.filing_type.clone(),
