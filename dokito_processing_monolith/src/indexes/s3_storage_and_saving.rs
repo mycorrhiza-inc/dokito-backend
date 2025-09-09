@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, str::FromStr, sync::Arc};
+use std::{collections::BTreeMap, path::Path, str::FromStr, sync::Arc};
 
 use aws_sdk_s3::Client;
 use dokito_types::{
@@ -31,11 +31,12 @@ async fn get_all_attachment_hashes(s3_client: &Client) -> anyhow::Result<Vec<Bla
 
     let mut hashes = Vec::with_capacity(prefixes.len());
     for prefix in prefixes {
-        let stripped_filekey = prefix
+        let path = Path::new(prefix.trim());
+        let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+        let stripped_filekey = stem.strip_prefix(dir).unwrap_or(&stem);
+        let stripped_filekey = stripped_filekey
             .strip_suffix(".json")
-            .unwrap_or(&prefix)
-            .strip_prefix(dir)
-            .unwrap_or(&prefix);
+            .unwrap_or(stripped_filekey);
         if let Ok(hash) = Blake2bHash::from_str(stripped_filekey) {
             hashes.push(hash);
         } else {
@@ -90,7 +91,7 @@ pub async fn generate_attachment_url_index() -> anyhow::Result<AttachIndex> {
     info!(hashlist_length = %hashlist.len(),"Got all hashes from directory.");
 
     // Limit concurrency to 20
-    let semaphore = Arc::new(Semaphore::new(20));
+    let semaphore = Arc::new(Semaphore::new(10));
     let mut handles = Vec::with_capacity(hashlist.len());
 
     for hash in hashlist {
@@ -100,7 +101,13 @@ pub async fn generate_attachment_url_index() -> anyhow::Result<AttachIndex> {
         let handle = tokio::spawn(async move {
             // Acquire a permit before starting
             let _permit = sem_clone.acquire().await.unwrap();
-            download_openscrapers_object::<RawAttachment>(&s3_clone, &hash).await
+            let res = download_openscrapers_object::<RawAttachment>(&s3_clone, &hash).await;
+            if let Err(e) = &res {
+                warn!(%hash,error=%e,"Encountered error while processing hash")
+            } else {
+                info!(%hash,"Got attachment info successfully")
+            };
+            res
         });
 
         handles.push(handle);
@@ -123,17 +130,19 @@ pub async fn generate_attachment_url_index() -> anyhow::Result<AttachIndex> {
 }
 
 #[derive(Deserialize, Serialize)]
+#[repr(transparent)]
+#[serde(transparent)]
 pub struct CanonAttachIndex(pub AttachIndex);
 
 impl CannonicalS3ObjectLocation for CanonAttachIndex {
     type AddressInfo = ();
-    fn generate_object_key(addr: &Self::AddressInfo) -> String {
+    fn generate_object_key(_: &Self::AddressInfo) -> String {
         "indexes/global/attachment_urls".to_string()
     }
-    fn generate_bucket(addr: &Self::AddressInfo) -> &'static str {
+    fn generate_bucket(_: &Self::AddressInfo) -> &'static str {
         &OPENSCRAPERS_S3_OBJECT_BUCKET
     }
-    fn get_credentials(addr: &Self::AddressInfo) -> &'static S3Credentials {
+    fn get_credentials(_: &Self::AddressInfo) -> &'static S3Credentials {
         &DIGITALOCEAN_S3
     }
 }

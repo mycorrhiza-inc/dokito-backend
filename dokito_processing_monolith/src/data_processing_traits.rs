@@ -24,6 +24,7 @@ impl RevalidationOutcome {
     pub fn did_change(&self) -> bool {
         match self {
             Self::NoChanges => false,
+            Self::DidChange => true,
             _ => true,
         }
     }

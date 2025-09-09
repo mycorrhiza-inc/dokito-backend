@@ -4,11 +4,16 @@ use std::{
 };
 
 use async_trait::async_trait;
-use dokito_types::attachments::RawAttachment;
-use mycorrhiza_common::tasks::{ExecuteUserTask, display_error_as_json};
+use dokito_types::{attachments::RawAttachment, env_vars::DIGITALOCEAN_S3};
+use mycorrhiza_common::{
+    s3_generic::cannonical_location::upload_object,
+    tasks::{ExecuteUserTask, display_error_as_json},
+};
 use tokio::sync::{RwLock, RwLockReadGuard};
 
-use crate::indexes::s3_storage_and_saving::{generate_attachment_url_index, pull_index_from_s3};
+use crate::indexes::s3_storage_and_saving::{
+    CanonAttachIndex, generate_attachment_url_index, pull_index_from_s3,
+};
 
 pub type AttachIndex = BTreeMap<String, RawAttachment>;
 
@@ -29,8 +34,14 @@ pub async fn get_global_att_index() -> RwLockReadGuard<'static, AttachIndex> {
 }
 pub async fn regenrate_url_attach_index() -> anyhow::Result<()> {
     let attach_index = generate_attachment_url_index().await?;
+
+    let s3_client = DIGITALOCEAN_S3.make_s3_client().await;
+    let canon_object = CanonAttachIndex(attach_index);
+    let _res = upload_object(&s3_client, &(), &canon_object).await;
+    let attach_index = canon_object.0;
     let mut guard = GLOBAL_RAW_ATTACHMENT_URL_INDEX_CACHE.write().await;
     *guard = attach_index;
+    drop(guard);
     Ok(())
 }
 
