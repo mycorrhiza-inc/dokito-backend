@@ -20,7 +20,7 @@ use tracing::{info, warn};
 use crate::indexes::attachment_url_index::AttachIndex;
 
 async fn get_all_attachment_hashes(s3_client: &Client) -> anyhow::Result<Vec<Blake2bHash>> {
-    let dir = "raw/metadata";
+    let dir = "raw/metadata/";
     let bucket: &'static str = &OPENSCRAPERS_S3_OBJECT_BUCKET;
     let attach_folder = S3DirectoryAddr {
         s3_client,
@@ -31,11 +31,15 @@ async fn get_all_attachment_hashes(s3_client: &Client) -> anyhow::Result<Vec<Bla
 
     let mut hashes = Vec::with_capacity(prefixes.len());
     for prefix in prefixes {
-        let stripped = prefix.strip_suffix(".json").unwrap_or(&prefix);
-        if let Ok(hash) = Blake2bHash::from_str(stripped) {
+        let stripped_filekey = prefix
+            .strip_suffix(".json")
+            .unwrap_or(&prefix)
+            .strip_prefix(dir)
+            .unwrap_or(&prefix);
+        if let Ok(hash) = Blake2bHash::from_str(stripped_filekey) {
             hashes.push(hash);
         } else {
-            warn!(%prefix,"Encountered file name that could not be converted to a hash.")
+            warn!(%stripped_filekey,"Encountered file name that could not be converted to a hash.")
         }
     }
     Ok(hashes)
