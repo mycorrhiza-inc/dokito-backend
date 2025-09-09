@@ -22,8 +22,8 @@ pub async fn get_global_att_index() -> RwLockReadGuard<'static, AttachIndex> {
         *guard = new_index;
         HAS_PULLED_FROM_CACHE_ONCE.store(true, Ordering::Relaxed);
     }
-    let guard = GLOBAL_RAW_ATTACHMENT_URL_INDEX_CACHE.read().await;
-    guard
+    
+    GLOBAL_RAW_ATTACHMENT_URL_INDEX_CACHE.read().await
 }
 
 pub async fn lookup_hash_from_url(url: &str) -> Option<RawAttachment> {
@@ -31,3 +31,34 @@ pub async fn lookup_hash_from_url(url: &str) -> Option<RawAttachment> {
     let result = index_guard.get(url);
     result.cloned()
 }
+
+use aide::{self, axum::IntoApiResponse};
+use axum::{
+    extract::Path,
+    response::Json,
+};
+use schemars::JsonSchema;
+use serde::Deserialize;
+use url::Url;
+
+#[derive(Deserialize, JsonSchema)]
+pub struct UrlPath {
+    /// The URL to lookup.
+    pub url: String,
+}
+
+pub async fn handle_attachment_url_lookup(
+    Path(UrlPath { url }): Path<UrlPath>,
+) -> impl IntoApiResponse {
+    match Url::parse(&url) {
+        Ok(parsed_url) => {
+            if let Some(attachment) = lookup_hash_from_url(parsed_url.as_str()).await {
+                Ok(Json(attachment))
+            } else {
+                Err("URL not found in cache".to_string())
+            }
+        }
+        Err(_) => Err("Invalid URL format".to_string()),
+    }
+}
+

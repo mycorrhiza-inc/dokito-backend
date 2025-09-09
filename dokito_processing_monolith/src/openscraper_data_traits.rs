@@ -1,9 +1,7 @@
-use std::mem::take;
-use std::{collections::HashMap, convert::Infallible};
+use std::convert::Infallible;
 
 use chrono::{NaiveDate, Utc};
 use futures_util::{StreamExt, stream};
-use rand::random;
 use tracing::warn;
 use uuid::Uuid;
 
@@ -75,7 +73,7 @@ impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
         let object_uuid = cached
             .as_ref()
             .map(|v| v.object_uuid)
-            .unwrap_or_else(|| Uuid::new_v4());
+            .unwrap_or_else(Uuid::new_v4);
         let opened_date_from_fillings = {
             let original_date = input.opened_date;
             let mut min_date = original_date;
@@ -208,7 +206,7 @@ impl ProcessFrom<RawGenericFiling> for ProcessedGenericFiling {
                 clean_up_author_list(input.individual_authors)
             }
         };
-        let new_filling_uuid = cached_filling_uuid.unwrap_or_else(|| Uuid::new_v4());
+        let new_filling_uuid = cached_filling_uuid.unwrap_or_else(Uuid::new_v4);
 
         let proc_filling = Self {
             // NOTE TO SELF: Using a u64 as a unique identifier does work, but it can cause bugs
@@ -245,7 +243,7 @@ impl ProcessFrom<RawGenericAttachment> for ProcessedGenericAttachment {
         let uuid = cached
             .as_ref()
             .map(|val| val.object_uuid)
-            .unwrap_or_else(|| Uuid::new_v4());
+            .unwrap_or_else(Uuid::new_v4);
         let hash = (input.hash).or_else(|| cached.and_then(|v| v.hash));
         let return_res = Self {
             object_uuid: uuid,

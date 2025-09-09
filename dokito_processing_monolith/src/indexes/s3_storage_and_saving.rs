@@ -21,9 +21,9 @@ use crate::indexes::attachment_url_index::AttachIndex;
 
 async fn get_all_attachment_hashes(s3_client: &Client) -> anyhow::Result<Vec<Blake2bHash>> {
     let dir = "raw/metadata";
-    let bucket: &'static str = &**DIGITALOCEAN_S3_OBJECT_BUCKET;
+    let bucket: &'static str = &DIGITALOCEAN_S3_OBJECT_BUCKET;
     let attach_folder = S3DirectoryAddr {
-        s3_client: &s3_client,
+        s3_client: s3_client,
         bucket,
         prefix: dir.into(),
     };
@@ -57,9 +57,13 @@ pub async fn pull_index_from_s3() -> AttachIndex {
 
 async fn generate_attachment_url_index() -> anyhow::Result<AttachIndex> {
     let s3_client = DIGITALOCEAN_S3.make_s3_client().await;
+    let s3_client_ref = &s3_client;
     let hashlist = get_all_attachment_hashes(&s3_client).await?;
     let results = stream::iter(hashlist.iter())
-        .map(|hash| download_openscrapers_object::<RawAttachment>(&s3_client, hash))
+        .map(|hash| async move {
+            
+            download_openscrapers_object::<RawAttachment>(s3_client_ref, hash).await
+        })
         .buffer_unordered(20)
         .collect::<Vec<_>>()
         .await;
