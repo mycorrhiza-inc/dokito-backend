@@ -4,7 +4,7 @@ use aide::axum::{
 };
 
 use crate::server::scraper_check_completed::get_completed_casedata_differential;
-use crate::server::s3_routes;
+use crate::{indexes::attachment_url_index::handle_attachment_url_lookup, server::s3_routes};
 
 pub fn create_public_router() -> ApiRouter {
     ApiRouter::new()
@@ -44,5 +44,5 @@ pub fn create_public_router() -> ApiRouter {
                 s3_routes::read_s3_file_docs,
             ),
         )
-    // .api_route("/attachments/url/{url}", post(handle_attachment_url_lookup))
+        .api_route("/attachments/url/{url}", post(handle_attachment_url_lookup))
 }

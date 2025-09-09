@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, str::FromStr};
+use std::{collections::BTreeMap, str::FromStr, sync::Arc};
 
 use aws_sdk_s3::Client;
 use dokito_types::{
@@ -55,25 +55,66 @@ pub async fn pull_index_from_s3() -> AttachIndex {
     BTreeMap::new()
 }
 
+// async fn generate_attachment_url_index() -> anyhow::Result<AttachIndex> {
+//     let s3_client = Arc::new(DIGITALOCEAN_S3.make_s3_client().await);
+//     let hashlist = get_all_attachment_hashes(&s3_client).await?;
+//     let results = stream::iter(hashlist.iter())
+//         .map(|hash| {
+//             let s3_clone = s3_client.clone();
+//             async move {
+//                 let val = download_openscrapers_object::<RawAttachment>(&*s3_clone, hash).await;
+//                 val
+//             }
+//         })
+//         .buffer_unordered(20)
+//         .collect::<Vec<_>>()
+//         .await;
+//     let map = results
+//         .into_iter()
+//         .filter_map(|r| match r {
+//             Ok(att) => Some((att.url.clone(), att)),
+//             Err(_err) => None,
+//         })
+//         .collect();
+//     Ok(map)
+// }
+
+use tokio::sync::Semaphore;
+
 async fn generate_attachment_url_index() -> anyhow::Result<AttachIndex> {
-    let s3_client = DIGITALOCEAN_S3.make_s3_client().await;
-    let s3_client_ref = &s3_client;
+    let s3_client = Arc::new(DIGITALOCEAN_S3.make_s3_client().await);
     let hashlist = get_all_attachment_hashes(&s3_client).await?;
-    let results = stream::iter(hashlist.iter())
-        .map(|hash| async move {
-            
-            download_openscrapers_object::<RawAttachment>(s3_client_ref, hash).await
-        })
-        .buffer_unordered(20)
-        .collect::<Vec<_>>()
-        .await;
-    let map = results
-        .into_iter()
-        .filter_map(|r| match r {
-            Ok(att) => Some((att.url.clone(), att)),
-            Err(_err) => None,
-        })
-        .collect();
+
+    // Limit concurrency to 20
+    let semaphore = Arc::new(Semaphore::new(20));
+    let mut handles = Vec::with_capacity(hashlist.len());
+
+    for hash in hashlist {
+        let s3_clone = s3_client.clone();
+        let sem_clone = semaphore.clone();
+        // Spawn each task
+        let handle = tokio::spawn(async move {
+            // Acquire a permit before starting
+            let _permit = sem_clone.acquire().await.unwrap();
+            download_openscrapers_object::<RawAttachment>(&s3_clone, &hash).await
+        });
+
+        handles.push(handle);
+    }
+
+    // Collect unordered results
+    let mut map = AttachIndex::new();
+    for handle in handles {
+        match handle.await? {
+            Ok(att) => {
+                map.insert(att.url.clone(), att);
+            }
+            Err(_err) => {
+                // Ignore errors just like in your filter_map
+            }
+        }
+    }
+
     Ok(map)
 }
 
