@@ -222,25 +222,8 @@ pub async fn ingest_case_with_retries(
 pub async fn ingest_nypuc_case(
     case: &ProcessedGenericDocket,
     pool: &Pool<Postgres>,
-    ignore_existing: bool,
+    _ignore_existing: bool,
 ) -> anyhow::Result<()> {
-    // Check for existing docket and delete if found
-    let existing_docket: Option<Uuid> = sqlx::query_scalar!(
-        "SELECT uuid FROM dockets WHERE docket_govid = $1",
-        &case.case_govid.as_str()
-    )
-    .fetch_optional(pool)
-    .await?;
-
-    if let Some(docket_uuid) = existing_docket {
-        if ignore_existing {
-            return Ok(());
-        } else {
-            sqlx::query!("DELETE FROM dockets WHERE uuid = $1", docket_uuid)
-                .execute(pool)
-                .await?;
-        }
-    }
     let petitioner_list: &[OrgName] = &case.petitioner_list;
     let petitioner_strings = petitioner_list
         .iter()
@@ -257,10 +240,23 @@ pub async fn ingest_nypuc_case(
         case_subtype = actual_subtype.to_string();
     }
 
-    // Create new docket
+    // Upsert docket
     let docket_uuid: Uuid = sqlx::query_scalar!(
-        "INSERT INTO dockets (docket_govid, docket_description, docket_title, industry, hearing_officer, opened_date, closed_date, petitioner_strings, docket_type, docket_subtype )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING uuid",
+        "INSERT INTO dockets (uuid, docket_govid, docket_description, docket_title, industry, hearing_officer, opened_date, closed_date, petitioner_strings, docket_type, docket_subtype )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT (uuid) DO UPDATE SET
+         docket_govid = EXCLUDED.docket_govid,
+         docket_description = EXCLUDED.docket_description,
+         docket_title = EXCLUDED.docket_title,
+         industry = EXCLUDED.industry,
+         hearing_officer = EXCLUDED.hearing_officer,
+         opened_date = EXCLUDED.opened_date,
+         closed_date = EXCLUDED.closed_date,
+         petitioner_strings = EXCLUDED.petitioner_strings,
+         docket_type = EXCLUDED.docket_type,
+         docket_subtype = EXCLUDED.docket_subtype
+         RETURNING uuid",
+        case.object_uuid,
         &case.case_govid.as_str(),
         &case.description,
         &case.case_name,
@@ -274,6 +270,7 @@ pub async fn ingest_nypuc_case(
     )
     .fetch_one(pool)
     .await?;
+
     for petitioner in petitioner_list.iter() {
         let petitioner_uuid = fetch_or_insert_new_orgname(petitioner, pool).await?;
         sqlx::query!(
@@ -292,13 +289,25 @@ pub async fn ingest_nypuc_case(
             .map(|s| s.name.to_string())
             .collect::<Vec<_>>();
         let organization_author_strings = filling
-            .individual_authors
+            .organization_authors
             .iter()
             .map(|s| s.name.to_string())
             .collect::<Vec<_>>();
         let filling_uuid: Uuid = sqlx::query_scalar!(
-            "INSERT INTO fillings (docket_uuid, docket_govid, individual_author_strings, organization_author_strings, filed_date, filling_type, filling_name, filling_description)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING uuid",
+            "INSERT INTO fillings (uuid, docket_uuid, docket_govid, individual_author_strings, organization_author_strings, filed_date, filling_type, filling_name, filling_description, openscrapers_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             ON CONFLICT (uuid) DO UPDATE SET
+             docket_uuid = EXCLUDED.docket_uuid,
+             docket_govid = EXCLUDED.docket_govid,
+             individual_author_strings = EXCLUDED.individual_author_strings,
+             organization_author_strings = EXCLUDED.organization_author_strings,
+             filed_date = EXCLUDED.filed_date,
+             filling_type = EXCLUDED.filling_type,
+             filling_name = EXCLUDED.filling_name,
+             filling_description = EXCLUDED.filling_description,
+             openscrapers_id = EXCLUDED.openscrapers_id
+             RETURNING uuid",
+            filling.object_uuid,
             docket_uuid,
             &case.case_govid.as_str(),
             &individual_author_strings,
@@ -307,6 +316,7 @@ pub async fn ingest_nypuc_case(
             &filling.filing_type,
             &filling.name,
             &filling.description,
+            &filling.object_uuid.to_string()
         )
         .fetch_one(pool)
         .await?;
@@ -318,15 +328,25 @@ pub async fn ingest_nypuc_case(
                 "".to_string()
             };
             sqlx::query!(
-                "INSERT INTO attachments (parent_filling_uuid, blake2b_hash, attachment_file_extension, attachment_file_name, attachment_title, attachment_url, openscrapers_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                "INSERT INTO attachments (uuid, parent_filling_uuid, blake2b_hash, attachment_file_extension, attachment_file_name, attachment_title, attachment_url, openscrapers_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    ON CONFLICT (uuid) DO UPDATE SET
+                    parent_filling_uuid = EXCLUDED.parent_filling_uuid,
+                    blake2b_hash = EXCLUDED.blake2b_hash,
+                    attachment_file_extension = EXCLUDED.attachment_file_extension,
+                    attachment_file_name = EXCLUDED.attachment_file_name,
+                    attachment_title = EXCLUDED.attachment_title,
+                    attachment_url = EXCLUDED.attachment_url,
+                    openscrapers_id = EXCLUDED.openscrapers_id
+                    ",
+                attachment.object_uuid,
                 filling_uuid,
                 hashstr,
                 &attachment.document_extension.to_string(),
                 &attachment.name,
                 &attachment.name,
                 &attachment.url,
-                &attachment.openscrapers_attachment_id.to_string()
+                &attachment.object_uuid.to_string()
             ).execute(pool)
             .await?;
         }
