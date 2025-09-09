@@ -6,7 +6,7 @@ use non_empty_string::non_empty_string;
 use tracing::{debug, info};
 
 use crate::types::attachments::RawAttachment;
-use crate::types::env_vars::{DIGITALOCEAN_S3, DIGITALOCEAN_S3_OBJECT_BUCKET};
+use crate::types::env_vars::{DIGITALOCEAN_S3, OPENSCRAPERS_S3_OBJECT_BUCKET};
 use crate::types::jurisdictions::JurisdictionInfo;
 use crate::types::processed::ProcessedGenericDocket;
 use crate::types::raw::RawGenericDocket;
@@ -64,7 +64,7 @@ pub fn get_openscrapers_json_key<T: CannonicalS3ObjectLocation>(addr: &T::Addres
 }
 
 pub fn get_s3_json_uri<T: CannonicalS3ObjectLocation>(addr: &T::AddressInfo) -> String {
-    let bucket = &**DIGITALOCEAN_S3_OBJECT_BUCKET;
+    let bucket = &**OPENSCRAPERS_S3_OBJECT_BUCKET;
     let key = get_openscrapers_json_key::<T>(addr);
     let credentials = &*DIGITALOCEAN_S3;
     S3LocationWithCredentials::from_key_bucket_and_credentials(&key, bucket, credentials)
@@ -76,7 +76,7 @@ pub async fn download_openscrapers_object<T: CannonicalS3ObjectLocation>(
     addr: &T::AddressInfo,
 ) -> anyhow::Result<T> {
     let key = get_openscrapers_json_key::<T>(addr);
-    let bucket = &**DIGITALOCEAN_S3_OBJECT_BUCKET;
+    let bucket = &**OPENSCRAPERS_S3_OBJECT_BUCKET;
     S3Addr::new(s3_client, bucket, &key).download_json().await
 }
 
@@ -86,7 +86,7 @@ pub async fn upload_object<T: CannonicalS3ObjectLocation>(
     object: &T,
 ) -> anyhow::Result<()> {
     let key = get_openscrapers_json_key::<T>(addr);
-    let bucket = &**DIGITALOCEAN_S3_OBJECT_BUCKET;
+    let bucket = &**OPENSCRAPERS_S3_OBJECT_BUCKET;
     S3Addr::new(s3_client, bucket, &key)
         .upload_json(&object)
         .await
@@ -97,12 +97,12 @@ pub async fn delete_openscrapers_s3_object<T: CannonicalS3ObjectLocation>(
     addr: &T::AddressInfo,
 ) -> anyhow::Result<()> {
     let key = get_openscrapers_json_key::<T>(addr);
-    let bucket = &**DIGITALOCEAN_S3_OBJECT_BUCKET;
+    let bucket = &**OPENSCRAPERS_S3_OBJECT_BUCKET;
     S3Addr::new(s3_client, bucket, &key).delete_file().await
 }
 
 pub fn generate_s3_object_uri_from_key(key: &str) -> String {
-    let bucket = &**DIGITALOCEAN_S3_OBJECT_BUCKET;
+    let bucket = &**OPENSCRAPERS_S3_OBJECT_BUCKET;
     let credentials = &*DIGITALOCEAN_S3;
     let uri = S3LocationWithCredentials::from_key_bucket_and_credentials(key, bucket, credentials)
         .to_string();
@@ -121,7 +121,7 @@ pub async fn fetch_attachment_file_from_s3(
 ) -> anyhow::Result<Vec<u8>> {
     info!(%hash, "Fetching attachment file from S3");
     let key = get_raw_attach_file_key(hash);
-    S3Addr::new(s3_client, &DIGITALOCEAN_S3_OBJECT_BUCKET, &key)
+    S3Addr::new(s3_client, &OPENSCRAPERS_S3_OBJECT_BUCKET, &key)
         .download_bytes()
         .await
 }
@@ -132,7 +132,7 @@ pub async fn fetch_attachment_file_from_s3_with_filename(
 ) -> anyhow::Result<(String, Vec<u8>)> {
     info!(%hash, "Fetching attachment file from S3");
     let key = get_raw_attach_file_key(hash);
-    let location = S3Addr::new(s3_client, &DIGITALOCEAN_S3_OBJECT_BUCKET, &key);
+    let location = S3Addr::new(s3_client, &OPENSCRAPERS_S3_OBJECT_BUCKET, &key);
     let bytes_future = location.download_bytes();
     let metadata_future = download_openscrapers_object::<RawAttachment>(s3_client, &hash);
     let (Ok(bytes), metadata) = join!(bytes_future, metadata_future) else {
@@ -158,7 +158,7 @@ pub async fn does_openscrapers_attachment_exist(s3_client: &S3Client, hash: Blak
     info!(%hash, "Checking if attachment exists in S3");
     let obj_key = get_openscrapers_json_key::<RawAttachment>(&hash);
     let file_key = get_raw_attach_file_key(hash);
-    let bucket = &**DIGITALOCEAN_S3_OBJECT_BUCKET;
+    let bucket = &**OPENSCRAPERS_S3_OBJECT_BUCKET;
     debug!(
         "Checking for attachment with object key: {} and file key: {}",
         obj_key, file_key
@@ -197,7 +197,7 @@ pub async fn list_processed_cases_for_jurisdiction(
     );
     let prefix = format!("objects/{country}/{state}/{jurisdiction}/");
     info!("Listing cases with prefix: {}", prefix);
-    let mut matches = S3DirectoryAddr::new(s3_client, &DIGITALOCEAN_S3_OBJECT_BUCKET, &prefix)
+    let mut matches = S3DirectoryAddr::new(s3_client, &OPENSCRAPERS_S3_OBJECT_BUCKET, &prefix)
         .list_all()
         .await?;
     for val in matches.iter_mut() {
@@ -224,7 +224,7 @@ pub async fn list_raw_cases_for_jurisdiction(
     );
     let prefix = format!("objects_raw/{country}/{state}/{jurisdiction}/");
     info!("Listing cases with prefix: {}", prefix);
-    let mut matches = S3DirectoryAddr::new(s3_client, &DIGITALOCEAN_S3_OBJECT_BUCKET, &prefix)
+    let mut matches = S3DirectoryAddr::new(s3_client, &OPENSCRAPERS_S3_OBJECT_BUCKET, &prefix)
         .list_all()
         .await?;
     for val in matches.iter_mut() {
@@ -245,7 +245,7 @@ pub async fn push_raw_attach_file_to_s3(
     info!(hash = %raw_att.hash, "Pushing raw attachment file to S3");
     let file_key = get_raw_attach_file_key(raw_att.hash);
 
-    S3Addr::new(s3_client, &DIGITALOCEAN_S3_OBJECT_BUCKET, &file_key)
+    S3Addr::new(s3_client, &OPENSCRAPERS_S3_OBJECT_BUCKET, &file_key)
         .upload_bytes(file_contents)
         .await?;
     debug!("Successfully pushed file to S3");

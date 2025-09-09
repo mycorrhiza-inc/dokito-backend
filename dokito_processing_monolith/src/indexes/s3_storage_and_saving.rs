@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, str::FromStr, sync::Arc};
 use aws_sdk_s3::Client;
 use dokito_types::{
     attachments::RawAttachment,
-    env_vars::{DIGITALOCEAN_S3, DIGITALOCEAN_S3_OBJECT_BUCKET},
+    env_vars::{DIGITALOCEAN_S3, OPENSCRAPERS_S3_OBJECT_BUCKET},
 };
 use futures::{StreamExt, stream};
 use mycorrhiza_common::{
@@ -15,15 +15,15 @@ use mycorrhiza_common::{
     },
 };
 use serde::{Deserialize, Serialize};
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::indexes::attachment_url_index::AttachIndex;
 
 async fn get_all_attachment_hashes(s3_client: &Client) -> anyhow::Result<Vec<Blake2bHash>> {
     let dir = "raw/metadata";
-    let bucket: &'static str = &DIGITALOCEAN_S3_OBJECT_BUCKET;
+    let bucket: &'static str = &OPENSCRAPERS_S3_OBJECT_BUCKET;
     let attach_folder = S3DirectoryAddr {
-        s3_client: s3_client,
+        s3_client,
         bucket,
         prefix: dir.into(),
     };
@@ -48,9 +48,7 @@ pub async fn pull_index_from_s3() -> AttachIndex {
     {
         return fetched_index.0;
     };
-    if let Ok(generated_index) = generate_attachment_url_index().await {
-        return generated_index;
-    }
+    info!("Failed fetching from s3, setting index as empty.");
 
     BTreeMap::new()
 }
@@ -81,9 +79,11 @@ pub async fn pull_index_from_s3() -> AttachIndex {
 
 use tokio::sync::Semaphore;
 
-async fn generate_attachment_url_index() -> anyhow::Result<AttachIndex> {
+pub async fn generate_attachment_url_index() -> anyhow::Result<AttachIndex> {
+    info!("Starting attachment index generation");
     let s3_client = Arc::new(DIGITALOCEAN_S3.make_s3_client().await);
     let hashlist = get_all_attachment_hashes(&s3_client).await?;
+    info!(hashlist_length = %hashlist.len(),"Got all hashes from directory.");
 
     // Limit concurrency to 20
     let semaphore = Arc::new(Semaphore::new(20));
@@ -127,7 +127,7 @@ impl CannonicalS3ObjectLocation for CanonAttachIndex {
         "indexes/global/attachment_urls".to_string()
     }
     fn generate_bucket(addr: &Self::AddressInfo) -> &'static str {
-        &DIGITALOCEAN_S3_OBJECT_BUCKET
+        &OPENSCRAPERS_S3_OBJECT_BUCKET
     }
     fn get_credentials(addr: &Self::AddressInfo) -> &'static S3Credentials {
         &DIGITALOCEAN_S3

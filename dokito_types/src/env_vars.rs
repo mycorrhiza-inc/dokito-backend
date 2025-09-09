@@ -2,8 +2,8 @@ use std::{env, sync::LazyLock};
 
 use mycorrhiza_common::s3_generic::{S3Credentials, S3EnvNames, make_s3_lazylock};
 
-pub static DIGITALOCEAN_S3_OBJECT_BUCKET: LazyLock<String> = LazyLock::new(|| {
-    env::var("DIGITALOCEAN_S3_OBJECT_BUCKET").unwrap_or_else(|_| "opescrapers".to_string())
+pub static OPENSCRAPERS_S3_OBJECT_BUCKET: LazyLock<String> = LazyLock::new(|| {
+    env::var("OPENSCRAPERS_S3_OBJECT_BUCKET").unwrap_or_else(|_| "openscrapers".to_string())
 });
 
 struct DigitalOceanS3Envs {}

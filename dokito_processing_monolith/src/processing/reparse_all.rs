@@ -67,7 +67,7 @@
 //         // Clean docket if fetch failed.
 //         let docket_key = get_case_s3_key(docket_govid, jur_info);
 //         tracing::warn!(%docket_govid, %docket_key,"Could not properly serialize docket, deleting out of an abundance of caution.");
-//         S3Addr::new(s3_client, &DIGITALOCEAN_S3_OBJECT_BUCKET, &docket_key)
+//         S3Addr::new(s3_client, &OPENSCRAPERS_S3_OBJECT_BUCKET, &docket_key)
 //             .delete_file()
 //             .await?;
 //         return Ok(());

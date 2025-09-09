@@ -10,7 +10,7 @@ use tracing::info;
 
 use crate::{
     server::define_routes,
-    types::env_vars::{DIGITALOCEAN_S3, DIGITALOCEAN_S3_OBJECT_BUCKET},
+    types::env_vars::{DIGITALOCEAN_S3, OPENSCRAPERS_S3_OBJECT_BUCKET},
 };
 use axum::extract::DefaultBodyLimit;
 use tower_http::cors::{Any, CorsLayer};
@@ -46,7 +46,7 @@ static PORT: LazyLock<u16> = LazyLock::new(|| {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let _ = *DIGITALOCEAN_S3;
-    let _ = *DIGITALOCEAN_S3_OBJECT_BUCKET;
+    let _ = *OPENSCRAPERS_S3_OBJECT_BUCKET;
     let _ = *DEEPINFRA_API_KEY;
     if let Err(e) = do_i_have_internet() {
         tracing::error!(err = %e,"NO INTERNET DETECTED");

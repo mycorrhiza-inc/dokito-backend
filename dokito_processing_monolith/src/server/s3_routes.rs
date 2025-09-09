@@ -22,7 +22,7 @@ use crate::{
         get_jurisdiction_prefix, list_processed_cases_for_jurisdiction, upload_object,
     },
     types::{
-        attachments::RawAttachment, env_vars::DIGITALOCEAN_S3_OBJECT_BUCKET,
+        attachments::RawAttachment, env_vars::OPENSCRAPERS_S3_OBJECT_BUCKET,
         jurisdictions::JurisdictionInfo, processed::ProcessedGenericDocket,
     },
 };
@@ -34,7 +34,7 @@ pub struct OpenscrapersS3Path {
 pub async fn read_openscrapers_s3_file(
     Path(OpenscrapersS3Path { path }): Path<OpenscrapersS3Path>,
 ) -> impl IntoApiResponse {
-    let bucket = &**DIGITALOCEAN_S3_OBJECT_BUCKET;
+    let bucket = &**OPENSCRAPERS_S3_OBJECT_BUCKET;
     let s3_client = crate::s3_stuff::make_s3_client().await;
     let result = S3Addr::new(&s3_client, bucket, &path)
         .download_bytes()
@@ -62,7 +62,7 @@ pub async fn write_s3_file_string(Json(payload): Json<S3UploadString>) -> impl I
     let contents = payload.contents.into_bytes();
     let bucket = (payload.bucket)
         .as_deref()
-        .unwrap_or(&**DIGITALOCEAN_S3_OBJECT_BUCKET);
+        .unwrap_or(&**OPENSCRAPERS_S3_OBJECT_BUCKET);
     let result = S3Addr::new(&s3_client, bucket, &payload.key)
         .upload_bytes(contents)
         .await;
@@ -83,7 +83,7 @@ pub async fn write_s3_file_json(Json(payload): Json<S3UploadJson>) -> impl IntoA
 
     let bucket = (payload.bucket)
         .as_deref()
-        .unwrap_or(&**DIGITALOCEAN_S3_OBJECT_BUCKET);
+        .unwrap_or(&**OPENSCRAPERS_S3_OBJECT_BUCKET);
     let result = S3Addr::new(&s3_client, bucket, &payload.key)
         .upload_json(&payload.contents)
         .await;
@@ -180,7 +180,7 @@ pub async fn recursive_delete_all_jurisdiction_data(
     let s3_client = crate::s3_stuff::make_s3_client().await;
     let jurisdiction_info = JurisdictionInfo::new_usa(&jurisdiction_name, &state);
     let prefix = get_jurisdiction_prefix(&jurisdiction_info);
-    let bucket = &**DIGITALOCEAN_S3_OBJECT_BUCKET;
+    let bucket = &**OPENSCRAPERS_S3_OBJECT_BUCKET;
     let result = S3DirectoryAddr::new(&s3_client, bucket, &prefix)
         .delete_all()
         .await;

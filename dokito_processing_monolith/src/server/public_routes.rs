@@ -2,8 +2,12 @@ use aide::axum::{
     ApiRouter,
     routing::{get, get_with, post},
 };
+use mycorrhiza_common::tasks::routing::handle_default_task_route;
 
-use crate::server::scraper_check_completed::get_completed_casedata_differential;
+use crate::{
+    indexes::attachment_url_index::RegenerateUrlAttachIndex,
+    server::scraper_check_completed::get_completed_casedata_differential,
+};
 use crate::{indexes::attachment_url_index::handle_attachment_url_lookup, server::s3_routes};
 
 pub fn create_public_router() -> ApiRouter {
@@ -44,5 +48,12 @@ pub fn create_public_router() -> ApiRouter {
                 s3_routes::read_s3_file_docs,
             ),
         )
-        .api_route("/attachments/url/{url}", post(handle_attachment_url_lookup))
+        .api_route(
+            "/attachment_index/lookup/{url}",
+            post(handle_attachment_url_lookup),
+        )
+        .api_route(
+            "/attachment_index/regenerate",
+            post(handle_default_task_route::<RegenerateUrlAttachIndex>),
+        )
 }

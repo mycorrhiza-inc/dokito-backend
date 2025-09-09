@@ -7,7 +7,7 @@ use mycorrhiza_common::s3_generic::fetchers_and_getters::S3DirectoryAddr;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::types::env_vars::DIGITALOCEAN_S3_OBJECT_BUCKET;
+use crate::types::env_vars::OPENSCRAPERS_S3_OBJECT_BUCKET;
 
 pub fn define_temporary_routes(app: ApiRouter) -> ApiRouter {
     app.api_route(
@@ -33,7 +33,7 @@ pub struct S3DirectoryLoc {
 }
 
 pub async fn move_s3_objects(Json(payload): Json<CopyPrefixRequest>) -> Result<(), String> {
-    let default_bucket = &**DIGITALOCEAN_S3_OBJECT_BUCKET;
+    let default_bucket = &**OPENSCRAPERS_S3_OBJECT_BUCKET;
     let s3_client = crate::s3_stuff::make_s3_client().await;
 
     let source = S3DirectoryAddr::new(
@@ -60,7 +60,7 @@ pub async fn move_s3_objects(Json(payload): Json<CopyPrefixRequest>) -> Result<(
 }
 
 pub async fn delete_s3_objects(Json(payload): Json<S3DirectoryLoc>) -> Result<(), String> {
-    let default_bucket = &**DIGITALOCEAN_S3_OBJECT_BUCKET;
+    let default_bucket = &**OPENSCRAPERS_S3_OBJECT_BUCKET;
     let s3_client = crate::s3_stuff::make_s3_client().await;
 
     let source = S3DirectoryAddr::new(
