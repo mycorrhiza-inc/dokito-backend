@@ -9,7 +9,9 @@ use dokito_types::{
     processed::ProcessedGenericDocket,
     raw::{RawDocketWithJurisdiction, RawGenericDocket},
 };
+use futures::future::join_all;
 use sqlx::postgres::PgPoolOptions;
+use tokio::sync::Semaphore;
 use tracing::info;
 
 use crate::{
@@ -42,21 +44,40 @@ pub async fn manual_fully_process_dockets_right_now(
     let s3_client = DIGITALOCEAN_S3.make_s3_client().await;
 
     let extra = (s3_client, jurisdiction);
-    let mut return_list = vec![];
-
-    for docket in dockets {
-        info!(?docket.case_govid, "Processing docket");
-        let res = process_case(docket, &extra).await;
-        match res {
-            Ok(processed) => {
-                info!(?processed.case_govid, "Successfully processed docket");
-                return_list.push(processed);
-            }
-            Err(err) => {
-                info!(?err, "Failed to process docket");
+    
+    // Create a semaphore to limit concurrent processing to 30
+    let semaphore = std::sync::Arc::new(Semaphore::new(30));
+    
+    // Create futures for concurrent processing with semaphore
+    let process_futures = dockets.into_iter().map(|docket| {
+        let semaphore_clone = semaphore.clone();
+        let extra_clone = extra.clone();
+        
+        async move {
+            // Acquire permit from semaphore
+            let _permit = semaphore_clone.acquire().await.unwrap();
+            info!(?docket.case_govid, "Processing docket");
+            match process_case(docket, &extra_clone).await {
+                Ok(processed) => {
+                    info!(?processed.case_govid, "Successfully processed docket");
+                    Some(processed)
+                }
+                Err(err) => {
+                    info!(?err, "Failed to process docket");
+                    None
+                }
             }
         }
-    }
+    });
+    
+    // Execute all processing futures concurrently
+    let processed_results = join_all(process_futures).await;
+    
+    // Filter out None values (failed processing)
+    let processed_dockets: Vec<ProcessedGenericDocket> = processed_results
+        .into_iter()
+        .flatten() // This removes None values
+        .collect();
 
     let db_url = &**DEFAULT_POSTGRES_CONNECTION_URL;
     info!("Connecting to database");
@@ -69,24 +90,38 @@ pub async fn manual_fully_process_dockets_right_now(
 
     let tries = 3;
     let ignore_existing = false;
-
-    for processed_docket in return_list.iter() {
-        info!(
-            %processed_docket.case_govid,
-            %processed_docket.object_uuid,
-
-            tries, ignore_existing, "Ingesting docket into SQL"
-        );
-        let _res =
-            ingest_sql_case_with_retries(processed_docket, &pool, ignore_existing, tries).await;
-    }
+    
+    // Create semaphore for SQL ingestion
+    let ingest_semaphore = std::sync::Arc::new(Semaphore::new(30));
+    
+    // Create futures for concurrent SQL ingestion with semaphore
+    let ingest_futures = processed_dockets.iter().map(|processed_docket| {
+        let semaphore_clone = ingest_semaphore.clone();
+        let pool_clone = pool.clone();
+        let docket_clone = processed_docket.clone();
+        
+        async move {
+            // Acquire permit from semaphore
+            let _permit = semaphore_clone.acquire().await.unwrap();
+            info!(
+                %docket_clone.case_govid,
+                %docket_clone.object_uuid,
+                tries, ignore_existing, "Ingesting docket into SQL"
+            );
+            // We don't return anything from this function as errors are handled internally
+            let _ = ingest_sql_case_with_retries(&docket_clone, &pool_clone, ignore_existing, tries).await;
+        }
+    });
+    
+    // Execute all ingestion futures concurrently
+    join_all(ingest_futures).await;
 
     info!(
-        processed_count = return_list.len(),
+        processed_count = processed_dockets.len(),
         "Finished manual docket processing"
     );
 
-    Ok(Json(return_list))
+    Ok(Json(processed_dockets))
 }
 pub async fn submit_case_to_queue_without_download(
     Json(case): Json<RawDocketWithJurisdiction>,
