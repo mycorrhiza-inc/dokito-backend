@@ -24,37 +24,70 @@ use crate::{
 use mycorrhiza_common::tasks::{TaskStatusDisplay, workers::add_task_to_queue};
 
 pub async fn manual_fully_process_dockets_right_now(
-    Json(dockets): Json<Vec<RawGenericDocket>>,
     Path(JurisdictionPath {
         state,
         jurisdiction_name,
     }): Path<JurisdictionPath>,
+    Json(dockets): Json<Vec<RawGenericDocket>>,
 ) -> Result<Json<Vec<ProcessedGenericDocket>>, String> {
+    info!(
+        state = %state,
+        jurisdiction_name = %jurisdiction_name,
+        docket_count = dockets.len(),
+        "Starting manual docket processing"
+    );
+
     let jurisdiction = JurisdictionInfo::new_usa(&jurisdiction_name, &state);
+
     let s3_client = DIGITALOCEAN_S3.make_s3_client().await;
+
     let extra = (s3_client, jurisdiction);
     let mut return_list = vec![];
+
     for docket in dockets {
+        info!(?docket.case_govid, "Processing docket");
         let res = process_case(docket, &extra).await;
-        if let Ok(processed) = res {
-            return_list.push(processed);
+        match res {
+            Ok(processed) => {
+                info!(?processed.case_govid, "Successfully processed docket");
+                return_list.push(processed);
+            }
+            Err(err) => {
+                info!(?err, "Failed to process docket");
+            }
         }
     }
+
     let db_url = &**DEFAULT_POSTGRES_CONNECTION_URL;
+    info!("Connecting to database");
     let pool = PgPoolOptions::new()
         .max_connections(10)
         .connect(db_url)
         .await
         .unwrap();
+    info!("Database connection established");
+
     let tries = 3;
     let ignore_existing = false;
+
     for processed_docket in return_list.iter() {
+        info!(
+            %processed_docket.case_govid,
+            %processed_docket.object_uuid,
+
+            tries, ignore_existing, "Ingesting docket into SQL"
+        );
         let _res =
             ingest_sql_case_with_retries(processed_docket, &pool, ignore_existing, tries).await;
     }
+
+    info!(
+        processed_count = return_list.len(),
+        "Finished manual docket processing"
+    );
+
     Ok(Json(return_list))
 }
-
 pub async fn submit_case_to_queue_without_download(
     Json(case): Json<RawDocketWithJurisdiction>,
 ) -> impl IntoApiResponse {

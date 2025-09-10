@@ -17,7 +17,7 @@ serde_json = "1.0.121"
 chrono = { version = "0.4.39", features = ["now", "serde"] }
 uuid = {version ="1.18.1", features = ["serde", "v4"]}
 
-axum = "0.8.4"
+axum = {version = "0.8.4", features = ["macros"]}
 serde = { version = "1.0.219", features = ["derive"] }
 tokio = { version = "1.44.2", features = ["full"] }
 aide = { version = "0.15", features = ["axum", "axum-extra", "axum-extra-query", "axum-json", "axum-matched-path", "axum-multipart", "axum-query", "macros", "swagger"] }
