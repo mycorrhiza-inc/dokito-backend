@@ -16,6 +16,7 @@ use tracing::info;
 
 use crate::{
     case_worker::ProcessCaseWithoutDownload,
+    data_processing_traits::Revalidate,
     processing::process_case,
     server::s3_routes::JurisdictionPath,
     sql_ingester_tasks::nypuc_ingest::{
@@ -44,15 +45,15 @@ pub async fn manual_fully_process_dockets_right_now(
     let s3_client = DIGITALOCEAN_S3.make_s3_client().await;
 
     let extra = (s3_client, jurisdiction);
-    
+
     // Create a semaphore to limit concurrent processing to 30
     let semaphore = std::sync::Arc::new(Semaphore::new(30));
-    
+
     // Create futures for concurrent processing with semaphore
     let process_futures = dockets.into_iter().map(|docket| {
         let semaphore_clone = semaphore.clone();
         let extra_clone = extra.clone();
-        
+
         async move {
             // Acquire permit from semaphore
             let _permit = semaphore_clone.acquire().await.unwrap();
@@ -69,10 +70,10 @@ pub async fn manual_fully_process_dockets_right_now(
             }
         }
     });
-    
+
     // Execute all processing futures concurrently
     let processed_results = join_all(process_futures).await;
-    
+
     // Filter out None values (failed processing)
     let processed_dockets: Vec<ProcessedGenericDocket> = processed_results
         .into_iter()
@@ -82,7 +83,7 @@ pub async fn manual_fully_process_dockets_right_now(
     let db_url = &**DEFAULT_POSTGRES_CONNECTION_URL;
     info!("Connecting to database");
     let pool = PgPoolOptions::new()
-        .max_connections(10)
+        .max_connections(30)
         .connect(db_url)
         .await
         .unwrap();
@@ -90,29 +91,33 @@ pub async fn manual_fully_process_dockets_right_now(
 
     let tries = 3;
     let ignore_existing = false;
-    
+
     // Create semaphore for SQL ingestion
     let ingest_semaphore = std::sync::Arc::new(Semaphore::new(30));
-    
+
     // Create futures for concurrent SQL ingestion with semaphore
     let ingest_futures = processed_dockets.iter().map(|processed_docket| {
         let semaphore_clone = ingest_semaphore.clone();
         let pool_clone = pool.clone();
-        let docket_clone = processed_docket.clone();
-        
+        let mut docket_clone = processed_docket.clone();
+
         async move {
             // Acquire permit from semaphore
             let _permit = semaphore_clone.acquire().await.unwrap();
+
+            let _ = docket_clone.revalidate().await;
             info!(
                 %docket_clone.case_govid,
                 %docket_clone.object_uuid,
                 tries, ignore_existing, "Ingesting docket into SQL"
             );
             // We don't return anything from this function as errors are handled internally
-            let _ = ingest_sql_case_with_retries(&docket_clone, &pool_clone, ignore_existing, tries).await;
+            let _ =
+                ingest_sql_case_with_retries(&docket_clone, &pool_clone, ignore_existing, tries)
+                    .await;
         }
     });
-    
+
     // Execute all ingestion futures concurrently
     join_all(ingest_futures).await;
 

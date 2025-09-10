@@ -58,10 +58,25 @@ impl Revalidate for ProcessedGenericFiling {
                 }
             }
         }
+
+        for attachment in self.attachments.iter_mut() {
+            let did_attachment_change = attachment.revalidate().await;
+            did_change = did_change.or(&did_attachment_change);
+        }
         did_change
     }
 }
 
+impl Revalidate for ProcessedGenericAttachment {
+    async fn revalidate(&mut self) -> RevalidationOutcome {
+        let mut did_change = RevalidationOutcome::NoChanges;
+        if self.object_uuid.is_nil() {
+            self.object_uuid = Uuid::new_v4();
+            did_change = RevalidationOutcome::DidChange
+        }
+        did_change
+    }
+}
 impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
     type ParseError = Infallible;
     type ExtraData = ();

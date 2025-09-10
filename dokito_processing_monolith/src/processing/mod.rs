@@ -1,4 +1,4 @@
-use crate::data_processing_traits::{DownloadIncomplete, ProcessFrom};
+use crate::data_processing_traits::{DownloadIncomplete, ProcessFrom, Revalidate};
 use crate::processing::attachments::OpenscrapersExtraData;
 use crate::s3_stuff::{DocketAddress, download_openscrapers_object, make_s3_client, upload_object};
 use crate::types::jurisdictions::JurisdictionInfo;
@@ -102,8 +102,9 @@ pub async fn process_case(
             .await
             .ok();
 
-    let processed_case =
+    let mut processed_case =
         ProcessedGenericDocket::process_from(raw_case, processed_case_cache, ()).await?;
+    let _outcome = processed_case.revalidate().await;
 
     upload_object(s3_client, &docket_address, &processed_case).await?;
 
