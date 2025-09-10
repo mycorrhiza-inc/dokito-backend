@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct ProcessedGenericAttachment {
+    #[serde(default)]
     pub name: String,
     pub index_in_filling: u64,
     pub document_extension: FileExtension,

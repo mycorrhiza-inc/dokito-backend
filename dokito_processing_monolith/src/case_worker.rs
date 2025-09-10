@@ -18,7 +18,8 @@ impl ExecuteUserTask for ProcessCaseWithoutDownload {
         let extra_data = (s3_client, jurisdiction);
         let res = process_case(docket, &extra_data).await;
         match res {
-            Ok(()) => Ok("Task Completed Successfully".into()),
+            Ok(proc_docket) => Ok(serde_json::to_value(proc_docket)
+                .unwrap_or("Processed Case but could not serialize".into())),
             Err(err) => Err(err.to_string().into()),
         }
     }

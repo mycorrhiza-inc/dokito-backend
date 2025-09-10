@@ -156,7 +156,8 @@ async fn ingest_wrapped_ny_data(case_id: &str, pool: &PgPool, ignore_existing: b
                 Ok(case) => {
                     const CASE_RETRIES: usize = 3;
                     if let Err(e) =
-                        ingest_case_with_retries(&case, pool, ignore_existing, CASE_RETRIES).await
+                        ingest_sql_case_with_retries(&case, pool, ignore_existing, CASE_RETRIES)
+                            .await
                     {
                         let err_debug = format!("{:?}", e);
                         tracing::error!(case_id = %case_id, error = %e, error_debug = &err_debug[..500], "Failed to ingest case, dispite retries.");
@@ -185,7 +186,7 @@ pub static DEFAULT_POSTGRES_CONNECTION_URL: LazyLock<String> = LazyLock::new(|| 
         .expect("POSTGRES_CONNECTION or DATABASE_URL should be set.")
 });
 
-pub async fn ingest_case_with_retries(
+pub async fn ingest_sql_case_with_retries(
     case: &ProcessedGenericDocket,
     pool: &Pool<Postgres>,
     ignore_existing: bool,
@@ -193,7 +194,7 @@ pub async fn ingest_case_with_retries(
 ) -> anyhow::Result<()> {
     let mut return_res = Ok(());
     for remaining_tries in (0..tries).rev() {
-        match ingest_nypuc_case(case, pool, ignore_existing).await {
+        match ingest_sql_nypuc_case(case, pool, ignore_existing).await {
             Ok(val) => return Ok(val),
             Err(err) => {
                 warn!(docket_govid=%case.case_govid, %remaining_tries,"Encountered error while processing docket, retrying.");
@@ -219,7 +220,7 @@ pub async fn ingest_case_with_retries(
     return_res
 }
 
-pub async fn ingest_nypuc_case(
+pub async fn ingest_sql_nypuc_case(
     case: &ProcessedGenericDocket,
     pool: &Pool<Postgres>,
     _ignore_existing: bool,

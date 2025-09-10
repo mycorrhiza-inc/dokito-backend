@@ -1,6 +1,6 @@
 use aide::axum::{
-    routing::{delete, post, post_with},
     ApiRouter,
+    routing::{delete, post, post_with},
 };
 
 use crate::server::direct_file_fetch::{
@@ -14,16 +14,17 @@ use crate::server::temporary_routes::define_temporary_routes;
 pub fn create_admin_router() -> ApiRouter {
     let admin_routes = ApiRouter::new()
         .api_route(
+            "/cases/{state}/{jurisdiction_name}/manual_process_raw_dockets",
+            post(queue_routes::manual_fully_process_dockets_right_now),
+        )
+        .api_route(
             "/cases/submit",
             post_with(
                 queue_routes::submit_case_to_queue_without_download,
                 queue_routes::submit_case_to_queue_docs,
             ),
         )
-        .api_route(
-            "/cases/reprocess_dockets_for_all",
-            post(reprocess_dockets),
-        )
+        .api_route("/cases/reprocess_dockets_for_all", post(reprocess_dockets))
         .api_route(
             "/cases/download_missing_hashes_for_all",
             post(download_all_missing_hashes),

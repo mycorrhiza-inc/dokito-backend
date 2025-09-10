@@ -75,7 +75,7 @@ impl DownloadIncomplete for ProcessedGenericDocket {
 pub async fn process_case(
     raw_case: RawGenericDocket,
     extra_data: &OpenscrapersExtraData,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<ProcessedGenericDocket> {
     let (s3_client, jur_info) = extra_data;
     tracing::info!(
         case_num=%raw_case.case_govid,
@@ -114,7 +114,7 @@ pub async fn process_case(
         jurisdiction=%jur_info.jurisdiction,
         "Successfully pushed case to db."
     );
-    Ok(())
+    Ok(processed_case)
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]
