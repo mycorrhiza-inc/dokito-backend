@@ -35,7 +35,7 @@ mod types;
 // To be more efficient, we could wrap it into an Arc,
 // or even store it as a serialized string.
 
-const DEFAULT_PORT: u16 = 33399;
+const DEFAULT_PORT: u16 = 8123;
 static PORT: LazyLock<u16> = LazyLock::new(|| {
     std::env::var("PORT")
         .ok()

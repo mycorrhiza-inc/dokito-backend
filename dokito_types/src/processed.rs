@@ -5,6 +5,7 @@ use mycorrhiza_common::{file_extension::FileExtension, hash::Blake2bHash};
 use non_empty_string::NonEmptyString;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use serde_with::{DefaultOnError, serde_as};
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
@@ -64,6 +65,7 @@ pub struct ProcessedGenericParty {
     is_corperate_entity: bool,
     is_human: bool,
 }
+#[serde_as]
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct ProcessedGenericDocket {
     pub case_govid: NonEmptyString,
@@ -92,6 +94,7 @@ pub struct ProcessedGenericDocket {
     #[serde(default)]
     pub closed_date: Option<NaiveDate>,
     #[serde(default)]
+    #[serde_as(deserialize_as = "DefaultOnError")]
     pub filings: Vec<ProcessedGenericFiling>,
     #[serde(default)]
     pub case_parties: Vec<ProcessedGenericParty>,
