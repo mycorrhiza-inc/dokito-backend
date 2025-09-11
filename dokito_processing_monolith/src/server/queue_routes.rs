@@ -20,7 +20,7 @@ use crate::{
     processing::process_case,
     server::s3_routes::JurisdictionPath,
     sql_ingester_tasks::nypuc_ingest::{
-        DEFAULT_POSTGRES_CONNECTION_URL, ingest_sql_case_with_retries, ingest_sql_nypuc_case,
+        DEFAULT_POSTGRES_CONNECTION_URL, ingest_sql_case_with_retries,
     },
 };
 

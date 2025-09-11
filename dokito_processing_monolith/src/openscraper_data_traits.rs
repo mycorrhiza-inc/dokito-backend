@@ -162,20 +162,20 @@ impl ProcessFrom<RawGenericFiling> for ProcessedGenericFiling {
         cached: Option<Self>,
         index_data: Self::ExtraData,
     ) -> Result<Self, Self::ParseError> {
-        let (
-            processed_attach_map,
-            cached_orgauthorlist,
-            cached_individualauthorllist,
-            cached_filling_uuid,
-        ) = match cached {
-            Some(filling) => (
-                Some(filling.attachments),
-                Some(filling.organization_authors),
-                Some(filling.individual_authors),
-                Some(filling.object_uuid),
-            ),
-            None => (None, None, None, None),
-        };
+        let object_uuid = cached
+            .as_ref()
+            .map(|v| v.object_uuid)
+            .unwrap_or_else(Uuid::new_v4);
+        let (processed_attach_map, cached_orgauthorlist, cached_individualauthorllist) =
+            match cached {
+                Some(filling) => (
+                    Some(filling.attachments),
+                    Some(filling.organization_authors),
+                    Some(filling.individual_authors),
+                ),
+                None => (None, None, None),
+            };
+
         let matched_attach_list =
             match_raw_attaches_to_processed_attaches(input.attachments, processed_attach_map);
         // Async match the raw attachments with the cached versions, and process them async 5 at a
@@ -221,14 +221,13 @@ impl ProcessFrom<RawGenericFiling> for ProcessedGenericFiling {
                 clean_up_author_list(input.individual_authors)
             }
         };
-        let new_filling_uuid = cached_filling_uuid.unwrap_or_else(Uuid::new_v4);
 
         let proc_filling = Self {
             // NOTE TO SELF: Using a u64 as a unique identifier does work, but it can cause bugs
             // because its possible to sub in non unique u64's (such as the index_data.index)
             // so even though its an extra dependancy and 128 bits of randomness is excessive, using
             // a UUID would avoid these bugs.
-            object_uuid: new_filling_uuid,
+            object_uuid,
             filed_date: input.filed_date,
             index_in_docket: index_data.index,
             attachments: processed_attachments,
