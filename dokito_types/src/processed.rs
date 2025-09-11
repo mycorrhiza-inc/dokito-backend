@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use chrono::{DateTime, NaiveDate, Utc};
 use mycorrhiza_common::{file_extension::FileExtension, hash::Blake2bHash};
 use non_empty_string::NonEmptyString;
+use openscraper_types::raw::RawGenericParty;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_with::{DefaultOnError, serde_as};
@@ -36,12 +37,44 @@ pub struct OrgName {
     pub suffix: String,
 }
 
+use serde::Deserializer;
+
+// generic helper that turns either a Vec<T> or a map into a Vec<T>
+fn deserialize_vec_or_map<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum VecOrMap<T> {
+        Vec(Vec<T>),
+        Map(HashMap<String, T>),
+        NumKeyMap(HashMap<u64, T>),
+    }
+
+    match VecOrMap::<T>::deserialize(deserializer)? {
+        VecOrMap::Vec(v) => Ok(v),
+        VecOrMap::Map(m) => Ok(m.into_values().collect()),
+        VecOrMap::NumKeyMap(m) => Ok(m.into_values().collect()),
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+pub struct ProcessedGenericParty {
+    name: NonEmptyString,
+    is_corperate_entity: bool,
+    is_human: bool,
+}
+
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct ProcessedGenericFiling {
     pub filed_date: Option<NaiveDate>,
     pub index_in_docket: u64,
     #[serde(default)]
     pub filling_govid: String,
+    #[serde(default)]
+    pub filling_url: String,
     #[serde(default)]
     pub object_uuid: Uuid,
     #[serde(default)]
@@ -54,24 +87,15 @@ pub struct ProcessedGenericFiling {
     pub filing_type: String,
     #[serde(default)]
     pub description: String,
-    #[serde(default)]
-    pub attachments: Vec<ProcessedGenericAttachment>,
+    #[serde(default, deserialize_with = "deserialize_vec_or_map")]
+    pub attachments: Vec<ProcessedGenericAttachment>, // 👈 handles both vec + map
     #[serde(default)]
     pub extra_metadata: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
-pub struct ProcessedGenericParty {
-    name: NonEmptyString,
-    is_corperate_entity: bool,
-    is_human: bool,
-}
-#[serde_as]
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct ProcessedGenericDocket {
     pub case_govid: NonEmptyString,
-    // This shouldnt be an optional field in the final submission, since it can be calculated from
-    // the minimum of the fillings, and the scraper should calculate it.
     #[serde(default)]
     pub opened_date: NaiveDate,
     #[serde(default)]
@@ -94,11 +118,12 @@ pub struct ProcessedGenericDocket {
     pub hearing_officer: String,
     #[serde(default)]
     pub closed_date: Option<NaiveDate>,
-    #[serde(default)]
-    #[serde_as(deserialize_as = "DefaultOnError")]
-    pub filings: Vec<ProcessedGenericFiling>,
+    #[serde(default, deserialize_with = "deserialize_vec_or_map")]
+    pub filings: Vec<ProcessedGenericFiling>, // 👈 same trick here
     #[serde(default)]
     pub case_parties: Vec<ProcessedGenericParty>,
+    #[serde(default)]
+    pub forwarded_raw_parties: Vec<RawGenericParty>,
     #[serde(default)]
     pub extra_metadata: HashMap<String, serde_json::Value>,
     #[serde(default = "Utc::now")]

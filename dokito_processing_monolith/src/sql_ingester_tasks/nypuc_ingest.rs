@@ -6,7 +6,9 @@ use dokito_types::{
     jurisdictions::JurisdictionInfo,
     processed::{OrgName, ProcessedGenericDocket},
     raw::RawGenericDocket,
-    s3_stuff::{DocketAddress, list_processed_cases_for_jurisdiction},
+    s3_stuff::{
+        DocketAddress, list_processed_cases_for_jurisdiction, list_raw_cases_for_jurisdiction,
+    },
 };
 use futures::stream::{self, StreamExt};
 use rand::{SeedableRng, rngs::SmallRng, seq::SliceRandom};
@@ -21,7 +23,7 @@ use mycorrhiza_common::{
 };
 use tracing::{info, warn};
 
-use crate::processing::process_case;
+use crate::{data_processing_traits::Revalidate, processing::process_case};
 
 #[derive(Clone, Copy, Default, Deserialize, JsonSchema)]
 pub struct NyPucIngestPurgePrevious {}
@@ -104,8 +106,9 @@ pub async fn get_all_ny_puc_data(purge_data: bool) -> anyhow::Result<()> {
     let ny_jurisdiction = JurisdictionInfo::new_usa("ny_puc", "ny");
     let s3_client = DIGITALOCEAN_S3.make_s3_client().await;
     let mut case_govids: Vec<String> =
-        list_processed_cases_for_jurisdiction(&s3_client, &ny_jurisdiction).await?;
-    info!(length=%case_govids.len(),"Got list of all cases");
+        list_raw_cases_for_jurisdiction(&s3_client, &ny_jurisdiction).await?;
+    let original_caselist_length = case_govids.len();
+    info!(length=%original_caselist_length,"Got list of all cases");
 
     if ignore_existing {
         let _ = filter_out_existing_dokito_cases(&pool, &mut case_govids).await;
@@ -114,16 +117,23 @@ pub async fn get_all_ny_puc_data(purge_data: bool) -> anyhow::Result<()> {
     let mut rng = SmallRng::from_os_rng();
     case_govids.shuffle(&mut rng);
 
+    let cases_to_process_len = case_govids.len();
+    info!(total_cases = %original_caselist_length, cases_to_process= %cases_to_process_len,"Filtered down original raw cases to a subset that is not present in the database.");
+
     let execute_case_wraped =
         async |case_id: String| ingest_wrapped_ny_data(&case_id, &pool, ignore_existing).await;
 
     // Create a stream of futures to fetch and ingest each case concurrently
     let futures_count = stream::iter(case_govids)
         .map(execute_case_wraped)
-        .buffer_unordered(10)
+        .buffer_unordered(20)
         .count()
         .await;
-    info!(futures_count, "Successfully completed all futures.");
+    info!(
+        futures_count,
+        "Successfully completed all sql ingest futures."
+    );
+    info!(total_dockets = %original_caselist_length, missing_cases = % cases_to_process_len, attempted_cases = % futures_count,"Out of all the cases, we wanted to proccess the missing cases, and tried to process:");
     Ok(())
 }
 
@@ -151,15 +161,24 @@ async fn get_processed_case_or_process_if_not_existing(
     let s3_client = DIGITALOCEAN_S3.make_s3_client().await;
     let case_res =
         download_openscrapers_object::<ProcessedGenericDocket>(&s3_client, case_address).await;
-    if let Err(err) = case_res.as_ref() {
-        let jurisdiction = case_address.jurisdiction.clone();
-        let raw_case =
-            download_openscrapers_object::<RawGenericDocket>(&s3_client, case_address).await?;
-        let extra_info = (s3_client, jurisdiction);
-        let final_res = process_case(raw_case, &extra_info).await;
-        return final_res;
+    let docket = match case_res {
+        Ok(docket) => Ok(docket),
+        Err(_) => {
+            let jurisdiction = case_address.jurisdiction.clone();
+            let raw_case =
+                download_openscrapers_object::<RawGenericDocket>(&s3_client, case_address).await?;
+            let extra_info = (s3_client, jurisdiction);
+            let final_res = process_case(raw_case, &extra_info).await;
+            final_res
+        }
+    };
+    match docket {
+        Ok(mut docket) => {
+            docket.revalidate().await;
+            Ok(docket)
+        }
+        Err(e) => Err(e),
     }
-    case_res
 }
 
 async fn ingest_wrapped_ny_data(case_id: &str, pool: &PgPool, ignore_existing: bool) {

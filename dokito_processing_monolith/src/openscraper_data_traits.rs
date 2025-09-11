@@ -6,6 +6,7 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::data_processing_traits::{ProcessFrom, Revalidate, RevalidationOutcome};
+use crate::indexes::attachment_url_index::lookup_hash_from_url;
 use crate::processing::llm_prompts::{clean_up_author_list, split_and_fix_author_blob};
 use crate::processing::match_raw_processed::{
     match_raw_attaches_to_processed_attaches, match_raw_fillings_to_processed_fillings,
@@ -74,6 +75,13 @@ impl Revalidate for ProcessedGenericAttachment {
             self.object_uuid = Uuid::new_v4();
             did_change = RevalidationOutcome::DidChange
         }
+        if self.hash.is_none() && !self.url.is_empty() {
+            let url = &*self.url;
+            let opt_raw_attach = lookup_hash_from_url(url).await;
+            if let Some(raw_attach) = opt_raw_attach {
+                self.hash = Some(raw_attach.hash);
+            }
+        }
         did_change
     }
 }
@@ -134,6 +142,7 @@ impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
         let llmed_petitioner_list = split_and_fix_author_blob(&input.petitioner).await;
         let final_processed_docket = ProcessedGenericDocket {
             object_uuid,
+            forwarded_raw_parties: input.case_parties.clone(),
             processed_at: Utc::now(),
             case_govid: input.case_govid.clone(),
             filings: processed_fillings,
@@ -223,16 +232,13 @@ impl ProcessFrom<RawGenericFiling> for ProcessedGenericFiling {
         };
 
         let proc_filling = Self {
-            // NOTE TO SELF: Using a u64 as a unique identifier does work, but it can cause bugs
-            // because its possible to sub in non unique u64's (such as the index_data.index)
-            // so even though its an extra dependancy and 128 bits of randomness is excessive, using
-            // a UUID would avoid these bugs.
             object_uuid,
             filed_date: input.filed_date,
             index_in_docket: index_data.index,
             attachments: processed_attachments,
             name: input.name.clone(),
             filling_govid: input.filling_govid.clone(),
+            filling_url: input.filling_url.clone(),
             filing_type: input.filing_type.clone(),
             description: input.description.clone(),
             extra_metadata: input.extra_metadata.clone(),

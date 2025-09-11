@@ -58,7 +58,7 @@ pub async fn reprocess_dockets(
     });
     let _results = stream::iter(boxed_tasks)
         .map(ExecuteUserTask::execute_task)
-        .buffer_unordered(10)
+        .buffer_unordered(30)
         .collect::<Vec<_>>()
         .await;
 

@@ -1,5 +1,5 @@
 [package]
-name = "openscraper_downloader"
+name = "dokito_processing_monolith"
 version = "0.1.0"
 edition = "2024"
 
