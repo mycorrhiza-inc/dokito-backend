@@ -2439,6 +2439,7 @@ dependencies = [
  "init-tracing-opentelemetry",
  "mycorrhiza_common",
  "non-empty-string",
+ "openscraper_types",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry-stdout",

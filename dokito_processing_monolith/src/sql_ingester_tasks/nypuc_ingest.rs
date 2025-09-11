@@ -5,7 +5,8 @@ use dokito_types::{
     env_vars::DIGITALOCEAN_S3,
     jurisdictions::JurisdictionInfo,
     processed::{OrgName, ProcessedGenericDocket},
-    s3_stuff::list_processed_cases_for_jurisdiction,
+    raw::RawGenericDocket,
+    s3_stuff::{DocketAddress, list_processed_cases_for_jurisdiction},
 };
 use futures::stream::{self, StreamExt};
 use rand::{SeedableRng, rngs::SmallRng, seq::SliceRandom};
@@ -15,8 +16,12 @@ use serde::Deserialize;
 use serde_json::Value;
 use sqlx::{PgPool, Pool, Postgres, postgres::PgPoolOptions, types::Uuid};
 
-use mycorrhiza_common::tasks::ExecuteUserTask;
+use mycorrhiza_common::{
+    s3_generic::cannonical_location::download_openscrapers_object, tasks::ExecuteUserTask,
+};
 use tracing::{info, warn};
+
+use crate::processing::process_case;
 
 #[derive(Clone, Copy, Default, Deserialize, JsonSchema)]
 pub struct NyPucIngestPurgePrevious {}
@@ -140,42 +145,42 @@ async fn filter_out_existing_dokito_cases(
     Ok(())
 }
 
-async fn ingest_wrapped_ny_data(case_id: &str, pool: &PgPool, ignore_existing: bool) {
-    let client = Client::new();
-    let url = format!("http://localhost:33399/public/cases/ny/ny_puc/{case_id}");
-    let res = client.get(&url).send().await;
+async fn get_processed_case_or_process_if_not_existing(
+    case_address: &DocketAddress,
+) -> anyhow::Result<ProcessedGenericDocket> {
+    let s3_client = DIGITALOCEAN_S3.make_s3_client().await;
+    let case_res =
+        download_openscrapers_object::<ProcessedGenericDocket>(&s3_client, case_address).await;
+    if let Err(err) = case_res.as_ref() {
+        let jurisdiction = case_address.jurisdiction.clone();
+        let raw_case =
+            download_openscrapers_object::<RawGenericDocket>(&s3_client, case_address).await?;
+        let extra_info = (s3_client, jurisdiction);
+        let final_res = process_case(raw_case, &extra_info).await;
+        return final_res;
+    }
+    case_res
+}
 
-    match res {
-        Ok(response) => {
-            let response_bytes = response
-                .text()
-                .await
-                .unwrap_or("encountered error getting raw response bytes".to_string());
-            let case_res = serde_json::from_str::<ProcessedGenericDocket>(&response_bytes);
-            match case_res {
-                Ok(case) => {
-                    const CASE_RETRIES: usize = 3;
-                    if let Err(e) =
-                        ingest_sql_case_with_retries(&case, pool, ignore_existing, CASE_RETRIES)
-                            .await
-                    {
-                        let err_debug = format!("{:?}", e);
-                        tracing::error!(case_id = %case_id, error = %e, error_debug = &err_debug[..500], "Failed to ingest case, dispite retries.");
-                    }
-                }
-                Err(e) => {
-                    let subslice = if response_bytes.len() > 301 {
-                        &response_bytes[..300]
-                    } else {
-                        &response_bytes
-                    };
-                    let err_debug = format!("{:?}", e);
-                    tracing::error!(case_id = %case_id, error = %e, error_debug = &err_debug[..500], raw_response =%subslice,"Failed to parse case")
-                }
+async fn ingest_wrapped_ny_data(case_id: &str, pool: &PgPool, ignore_existing: bool) {
+    let case_address = DocketAddress {
+        jurisdiction: JurisdictionInfo::new_usa("ny_puc", "ny"),
+        docket_govid: case_id.to_string(),
+    };
+    let case_res = get_processed_case_or_process_if_not_existing(&case_address).await;
+    match case_res {
+        Ok(case) => {
+            const CASE_RETRIES: usize = 3;
+            if let Err(e) =
+                ingest_sql_case_with_retries(&case, pool, ignore_existing, CASE_RETRIES).await
+            {
+                let err_debug = format!("{:?}", e);
+                tracing::error!(case_id = %case_id, error = %e, error_debug = &err_debug[..500], "Failed to ingest case, dispite retries.");
             }
         }
         Err(e) => {
-            tracing::error!(url,case_id = %case_id, error = %e, error_debug = ?e,"Failed to fetch case")
+            let err_debug = format!("{:?}", e);
+            tracing::error!(case_id = %case_id, error = %e, error_debug = &err_debug[..500], "Failed to parse case")
         }
     }
 }

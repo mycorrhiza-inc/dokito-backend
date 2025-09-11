@@ -9,6 +9,8 @@ mycorrhiza_common = {path = "../../common-rs", features = ["all"]}
 # mycorrhiza_common = {git = "https://github.com/mycorrhiza-inc/common-rs/", features = ["all"]}
 dokito_types = {path = "../dokito_types"}
 
+openscraper_types = {path = "../../scrapers/openscraper_types"}
+
 
 reqwest = { version = "0.12.5", features = ["json"] }
 blake2 = "0.10.6"

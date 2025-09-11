@@ -34,11 +34,7 @@ impl CannonicalS3ObjectLocation for RawAttachment {
     }
 }
 
-pub struct DocketAddress {
-    pub docket_govid: String,
-    pub jurisdiction: JurisdictionInfo,
-}
-
+pub use openscraper_types::s3_stuff::DocketAddress;
 impl CannonicalS3ObjectLocation for ProcessedGenericDocket {
     type AddressInfo = DocketAddress;
 
