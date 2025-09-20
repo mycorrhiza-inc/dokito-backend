@@ -1,4 +1,8 @@
-use crate::data_processing_traits::{DownloadIncomplete, ProcessFrom, Revalidate};
+use std::iter::Rev;
+
+use crate::data_processing_traits::{
+    DownloadIncomplete, ProcessFrom, Revalidate, RevalidationOutcome,
+};
 use crate::processing::attachments::OpenscrapersExtraData;
 use crate::s3_stuff::{DocketAddress, download_openscrapers_object, make_s3_client, upload_object};
 use crate::types::jurisdictions::JurisdictionInfo;
@@ -52,23 +56,35 @@ pub fn make_reflist_of_attachments_without_hash(
 
 impl DownloadIncomplete for ProcessedGenericDocket {
     type ExtraData = OpenscrapersExtraData;
-    type SucessData = ();
     async fn download_incomplete(
         &mut self,
         extra: &Self::ExtraData,
-    ) -> anyhow::Result<Self::SucessData> {
+    ) -> anyhow::Result<RevalidationOutcome> {
+        let _ = self.revalidate().await;
+        // info!(govid=%self.case_govid, jurisdiction=%extra.1.jurisdiction, opened_date = %self.opened_date, uuid = %self.object_uuid,"Attempting to download attachments for docket");
         let attachment_refs = make_reflist_of_attachments_without_hash(self);
         let wraped_download = async |val: &mut ProcessedGenericAttachment| {
             DownloadIncomplete::download_incomplete(val, extra).await
         };
         let futures_stream = stream::iter(attachment_refs.into_iter().map(wraped_download));
-        const CONCURRENT_ATTACHMENTS: usize = 2;
-        let _ = futures_stream
+        const CONCURRENT_ATTACHMENTS: usize = 10;
+        let change_results = futures_stream
             .buffer_unordered(CONCURRENT_ATTACHMENTS)
-            .count()
+            .collect::<Vec<_>>()
             .await;
-        info!(govid=%self.case_govid, jurisdiction=%extra.1.jurisdiction,"Successfully downloaded all attachments for docket");
-        Ok(())
+        let total_change_count = change_results
+            .iter()
+            .map(|val| match val {
+                Ok(RevalidationOutcome::DidChange) => 1,
+                _ => 0,
+            })
+            .sum();
+        info!(govid=%self.case_govid, jurisdiction=%extra.1.jurisdiction, opened_date = %self.opened_date, uuid = %self.object_uuid, attachments_downloaded = %total_change_count,"Successfully downloaded all attachments for docket");
+        let did_docket_change = match total_change_count {
+            0 => RevalidationOutcome::NoChanges,
+            _ => RevalidationOutcome::DidChange,
+        };
+        Ok(did_docket_change)
     }
 }
 

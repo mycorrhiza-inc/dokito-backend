@@ -47,9 +47,8 @@ pub trait ProcessFrom<T> {
 
 pub trait DownloadIncomplete {
     type ExtraData;
-    type SucessData;
     async fn download_incomplete(
         &mut self,
         extra: &Self::ExtraData,
-    ) -> anyhow::Result<Self::SucessData>;
+    ) -> anyhow::Result<RevalidationOutcome>;
 }

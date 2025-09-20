@@ -3,13 +3,18 @@ use aide::axum::{
     routing::{delete, post, post_with},
 };
 
-use crate::server::direct_file_fetch::{
-    handle_directly_process_file_request, handle_directly_process_file_request_docs,
-};
-use crate::server::queue_routes;
-use crate::server::reprocess_all_handlers::{download_all_missing_hashes, reprocess_dockets};
+use crate::server::reprocess_all_handlers::reprocess_dockets;
 use crate::server::s3_routes;
 use crate::server::temporary_routes::define_temporary_routes;
+use crate::server::{
+    direct_file_fetch::{
+        handle_directly_process_file_request, handle_directly_process_file_request_docs,
+    },
+    reprocess_all_handlers::handle_download_all_missing_hashes_random,
+};
+use crate::server::{
+    queue_routes, reprocess_all_handlers::handle_download_all_missing_hashes_newest,
+};
 
 pub fn create_admin_router() -> ApiRouter {
     let admin_routes = ApiRouter::new()
@@ -17,28 +22,14 @@ pub fn create_admin_router() -> ApiRouter {
             "/cases/{state}/{jurisdiction_name}/manual_process_raw_dockets",
             post(queue_routes::manual_fully_process_dockets_right_now),
         )
-        .api_route(
-            "/cases/submit",
-            post_with(
-                queue_routes::submit_case_to_queue_without_download,
-                queue_routes::submit_case_to_queue_docs,
-            ),
-        )
         .api_route("/cases/reprocess_dockets_for_all", post(reprocess_dockets))
         .api_route(
-            "/cases/download_missing_hashes_for_all",
-            post(download_all_missing_hashes),
+            "/cases/download_missing_hashes_for_all/random",
+            post(handle_download_all_missing_hashes_random),
         )
         .api_route(
-            "/write_s3_string",
-            post_with(
-                s3_routes::write_s3_file_string,
-                s3_routes::write_s3_file_docs,
-            ),
-        )
-        .api_route(
-            "/write_s3_json",
-            post_with(s3_routes::write_s3_file_json, s3_routes::write_s3_file_docs),
+            "/cases/download_missing_hashes_for_all/newest",
+            post(handle_download_all_missing_hashes_newest),
         )
         .api_route(
             "/direct_file_attachment_process",

@@ -1,3 +1,4 @@
+.devenv
 k8s/templates/secrets.yaml
 
 data/fugu_db

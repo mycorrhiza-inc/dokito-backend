@@ -61,10 +61,52 @@ where
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
-pub struct ProcessedGenericParty {
-    name: NonEmptyString,
-    is_corperate_entity: bool,
-    is_human: bool,
+#[serde(untagged)]
+pub enum ProcessedArtificalPerson {
+    Human(ProcessedGenericHuman),
+    Organization(ProcessedGenericOrganization),
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+struct ProcessedGenericHuman {
+    pub human_name: NonEmptyString,
+    #[serde(default)]
+    pub object_uuid: Uuid,
+    #[serde(default)]
+    pub western_first_name: String,
+    #[serde(default)]
+    pub western_last_name: String,
+    #[serde(default)]
+    pub contact_emails: Vec<String>,
+    #[serde(default)]
+    pub contact_phone_numbers: Vec<String>,
+    #[serde(default)]
+    pub representing_company: Option<ProcessedGenericOrganization>,
+    #[serde(default)]
+    pub employed_by: Option<ProcessedGenericOrganization>,
+    #[serde(default)]
+    pub title: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+struct ProcessedGenericOrganization {
+    pub truncated_org_name: NonEmptyString,
+    #[serde(default)]
+    pub org_suffix: String,
+    #[serde(default)]
+    pub object_uuid: Uuid,
+    #[serde(default)]
+    pub org_type: OrganizationType,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Copy, Default)]
+#[serde(rename_all = "snake_case")]
+enum OrganizationType {
+    #[default]
+    Unknown,
+    ForProfit,
+    NonProfit,
+    GovernmentAgency,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
@@ -121,7 +163,7 @@ pub struct ProcessedGenericDocket {
     #[serde(default, deserialize_with = "deserialize_vec_or_map")]
     pub filings: Vec<ProcessedGenericFiling>, // 👈 same trick here
     #[serde(default)]
-    pub case_parties: Vec<ProcessedGenericParty>,
+    pub case_parties: Vec<ProcessedArtificalPerson>,
     #[serde(default)]
     pub forwarded_raw_parties: Vec<RawGenericParty>,
     #[serde(default)]

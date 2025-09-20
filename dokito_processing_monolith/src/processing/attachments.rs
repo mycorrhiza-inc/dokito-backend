@@ -1,4 +1,5 @@
-use crate::data_processing_traits::DownloadIncomplete;
+use crate::data_processing_traits::{DownloadIncomplete, RevalidationOutcome};
+use crate::indexes::attachment_url_index::lookup_hash_from_url;
 use crate::processing::file_fetching::{FileDownloadError, RequestMethod};
 use crate::s3_stuff::{
     generate_s3_object_uri_from_key, get_raw_attach_file_key, get_s3_json_uri,
@@ -15,8 +16,10 @@ use non_empty_string::{NonEmptyString, non_empty_string};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::iter::Rev;
 use std::str::FromStr;
 use std::time::Duration;
+use tokio::sync::Semaphore;
 use tokio::time::sleep;
 use tracing::{debug, info};
 
@@ -28,16 +31,20 @@ const DOWNLOAD_RETRY_DELAY_SECONDS: u64 = 2;
 pub type OpenscrapersExtraData = (S3Client, JurisdictionInfo);
 impl DownloadIncomplete for ProcessedGenericAttachment {
     type ExtraData = OpenscrapersExtraData;
-    type SucessData = ();
     async fn download_incomplete(
         &mut self,
         (s3_client, jurisdiction_info): &Self::ExtraData,
-    ) -> anyhow::Result<Self::SucessData> {
+    ) -> anyhow::Result<RevalidationOutcome> {
         let name = NonEmptyString::from_str(&self.name)
             .unwrap_or_else(|_| non_empty_string!("unknown_filename"));
         if self.hash.is_some() {
-            return Err(anyhow!("File already has hash"));
+            return Ok(RevalidationOutcome::NoChanges);
         }
+        let res = lookup_hash_from_url(&self.url).await;
+        if let Some(cached_attach) = res {
+            self.hash = Some(cached_attach.hash);
+            return Ok(RevalidationOutcome::DidChange);
+        };
         debug!(url=%self.url,"Trying to download attachment file.");
         let extension = &self.document_extension;
 
@@ -67,7 +74,7 @@ impl DownloadIncomplete for ProcessedGenericAttachment {
         shipout_attachment_to_s3(file_contents, raw_attachment, s3_client).await?;
         self.hash = Some(hash);
         debug!(%hash, url = %self.url,"Successfully downloaded attachment and saved everything to s3.");
-        Ok(())
+        Ok(RevalidationOutcome::DidChange)
     }
 }
 
@@ -173,10 +180,13 @@ pub async fn process_attachment_with_direct_request(
     }
 }
 
+static MAXIMUM_EXTERNAL_FILE_DOWNLOADS: Semaphore = Semaphore::const_new(10);
+
 async fn download_file_content_validated_with_retries<T: InternetFileFetch + ?Sized>(
     to_fetch: &T,
     extension: &FileExtension,
 ) -> Result<FileDownloadResult, FileDownloadError> {
+    let permit = MAXIMUM_EXTERNAL_FILE_DOWNLOADS.acquire().await.unwrap();
     let mut last_error: Option<FileDownloadError> = None;
     for _ in 0..ATTACHMENT_DOWNLOAD_TRIES {
         match to_fetch
@@ -203,6 +213,7 @@ async fn download_file_content_validated_with_retries<T: InternetFileFetch + ?Si
     }
 
     tracing::error!(%extension,?to_fetch,"Could not download file from url dispite a bunch of retries.");
+    drop(permit);
 
     Err(last_error.unwrap())
 }
