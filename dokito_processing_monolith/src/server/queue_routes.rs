@@ -80,9 +80,7 @@ pub async fn manual_fully_process_dockets_right_now(
         .flatten() // This removes None values
         .collect();
 
-    let pool = get_dokito_pool()
-        .await
-        .map_err(|_err| "Could not get database connection".to_string())?;
+    let pool = get_dokito_pool().map_err(|_err| "Could not get database connection".to_string())?;
     info!("Database connection established");
 
     let tries = 3;
