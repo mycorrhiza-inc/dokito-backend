@@ -6,32 +6,46 @@ CREATE TABLE public.organizations (
   uuid uuid NOT NULL DEFAULT gen_random_uuid(),
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
-  name TEXT NOT NULL DEFAULT '',
-  aliases TEXT[] NOT NULL DEFAULT '{}',
-  description TEXT NOT NULL DEFAULT '',
-  artifical_person_type TEXT NOT NULL DEFAULT '',
-  org_suffix TEXT NOT NULL DEFAULT '',
+  name text NOT NULL DEFAULT ''::text,
+  aliases text[] NOT NULL DEFAULT '{}'::text[],
+  description text NOT NULL DEFAULT ''::text,
+  artifical_person_type text NOT NULL DEFAULT ''::text,
+  org_suffix text NOT NULL DEFAULT ''::text,
   CONSTRAINT organizations_pkey PRIMARY KEY (uuid)
 );
 ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
+
+-- Humans
+CREATE TABLE public.humans (
+  uuid uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  name text NOT NULL,
+  western_first_name text NOT NULL,
+  western_last_name text NOT NULL,
+  contact_emails text[] NOT NULL,
+  contact_phone_numbers text[] NOT NULL,
+  CONSTRAINT humans_pkey PRIMARY KEY (uuid)
+);
+ALTER TABLE public.humans ENABLE ROW LEVEL SECURITY;
 
 -- Dockets
 CREATE TABLE public.dockets (
   uuid uuid NOT NULL DEFAULT gen_random_uuid(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   created_at timestamp with time zone NOT NULL DEFAULT now(),
-  docket_govid TEXT NOT NULL DEFAULT '' UNIQUE,
-  docket_subtype TEXT NOT NULL DEFAULT '',
-  docket_description TEXT NOT NULL DEFAULT '',
-  docket_title TEXT NOT NULL DEFAULT '',
-  industry TEXT NOT NULL DEFAULT '',
-  hearing_officer TEXT NOT NULL DEFAULT '',
+  docket_govid text NOT NULL DEFAULT ''::text UNIQUE,
+  docket_subtype text NOT NULL DEFAULT ''::text,
+  docket_description text NOT NULL DEFAULT ''::text,
+  docket_title text NOT NULL DEFAULT ''::text,
+  industry text NOT NULL DEFAULT ''::text,
+  hearing_officer text NOT NULL DEFAULT ''::text,
   opened_date date NOT NULL,
   closed_date date,
-  current_status TEXT NOT NULL DEFAULT '',
-  assigned_judge TEXT NOT NULL DEFAULT '',
-  docket_type TEXT NOT NULL DEFAULT '',
-  petitioner_strings TEXT[] NOT NULL DEFAULT '{}',
+  current_status text NOT NULL DEFAULT ''::text,
+  assigned_judge text NOT NULL DEFAULT ''::text,
+  docket_type text NOT NULL DEFAULT ''::text,
+  petitioner_strings text[] NOT NULL DEFAULT '{}'::text[],
   CONSTRAINT dockets_pkey PRIMARY KEY (uuid)
 );
 ALTER TABLE public.dockets ENABLE ROW LEVEL SECURITY;
@@ -40,19 +54,19 @@ ALTER TABLE public.dockets ENABLE ROW LEVEL SECURITY;
 CREATE TABLE public.fillings (
   uuid uuid NOT NULL DEFAULT gen_random_uuid(),
   docket_uuid uuid NOT NULL,
-  docket_govid TEXT NOT NULL DEFAULT '',
-  individual_author_strings TEXT[] NOT NULL DEFAULT '{}',
-  organization_author_strings TEXT[] NOT NULL DEFAULT '{}',
+  docket_govid text NOT NULL DEFAULT ''::text,
+  individual_author_strings text[] NOT NULL DEFAULT '{}'::text[],
+  organization_author_strings text[] NOT NULL DEFAULT '{}'::text[],
   filed_date date NOT NULL,
-  filling_type TEXT NOT NULL DEFAULT '',
-  filling_name TEXT NOT NULL DEFAULT '',
-  filling_description TEXT NOT NULL DEFAULT '',
+  filling_type text NOT NULL DEFAULT ''::text,
+  filling_name text NOT NULL DEFAULT ''::text,
+  filling_description text NOT NULL DEFAULT ''::text,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
-  filling_govid TEXT NOT NULL DEFAULT '',
-  openscrapers_id TEXT NOT NULL UNIQUE,
+  filling_govid text NOT NULL DEFAULT ''::text,
+  openscrapers_id text NOT NULL UNIQUE,
   CONSTRAINT fillings_pkey PRIMARY KEY (uuid),
-  CONSTRAINT fillings_docket_uuid_fkey FOREIGN KEY (docket_uuid) REFERENCES public.dockets(uuid) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT fillings_docket_uuid_fkey FOREIGN KEY (docket_uuid) REFERENCES public.dockets(uuid)
 );
 ALTER TABLE public.fillings ENABLE ROW LEVEL SECURITY;
 
@@ -61,17 +75,17 @@ CREATE TABLE public.attachments (
   uuid uuid NOT NULL DEFAULT gen_random_uuid(),
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
-  blake2b_hash TEXT NOT NULL DEFAULT '',
+  blake2b_hash text NOT NULL DEFAULT ''::text,
   parent_filling_uuid uuid NOT NULL,
-  attachment_file_extension TEXT NOT NULL DEFAULT '',
-  attachment_file_name TEXT NOT NULL DEFAULT '',
-  attachment_title TEXT NOT NULL DEFAULT '',
-  attachment_type TEXT NOT NULL DEFAULT '',
-  attachment_subtype TEXT NOT NULL DEFAULT '',
-  attachment_url TEXT NOT NULL DEFAULT '',
-  openscrapers_id TEXT NOT NULL UNIQUE,
+  attachment_file_extension text NOT NULL DEFAULT ''::text,
+  attachment_file_name text NOT NULL DEFAULT ''::text,
+  attachment_title text NOT NULL DEFAULT ''::text,
+  attachment_type text NOT NULL DEFAULT ''::text,
+  attachment_subtype text NOT NULL DEFAULT ''::text,
+  attachment_url text NOT NULL DEFAULT ''::text,
+  openscrapers_id text NOT NULL UNIQUE,
   CONSTRAINT attachments_pkey PRIMARY KEY (uuid),
-  CONSTRAINT attachments_parent_filling_uuid_fkey FOREIGN KEY (parent_filling_uuid) REFERENCES public.fillings(uuid) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT attachments_parent_filling_uuid_fkey FOREIGN KEY (parent_filling_uuid) REFERENCES public.fillings(uuid)
 );
 ALTER TABLE public.attachments ENABLE ROW LEVEL SECURITY;
 
@@ -82,22 +96,22 @@ CREATE TABLE public.docket_petitioned_by_org (
   docket_uuid uuid NOT NULL DEFAULT gen_random_uuid(),
   petitioner_uuid uuid NOT NULL DEFAULT gen_random_uuid(),
   CONSTRAINT docket_petitioned_by_org_pkey PRIMARY KEY (uuid),
-  CONSTRAINT docket_petitioned_by_org_petitioner_uuid_fkey FOREIGN KEY (petitioner_uuid) REFERENCES public.organizations(uuid) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT docket_petitioned_by_org_docket_uuid_fkey FOREIGN KEY (docket_uuid) REFERENCES public.dockets(uuid) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT fk_docket_petitioned_by_org_docket_uuid FOREIGN KEY (docket_uuid) REFERENCES public.dockets(uuid),
+  CONSTRAINT fk_docket_petitioned_by_org_petitioner_uuid FOREIGN KEY (petitioner_uuid) REFERENCES public.organizations(uuid)
 );
 ALTER TABLE public.docket_petitioned_by_org ENABLE ROW LEVEL SECURITY;
 
--- Fillings filed by org relation
-CREATE TABLE public.fillings_filed_by_org_relation (
-  relation_uuid uuid NOT NULL DEFAULT gen_random_uuid(),
+-- Fillings filed by individual
+CREATE TABLE public.fillings_filed_by_individual (
+  uuid uuid NOT NULL DEFAULT gen_random_uuid(),
   created_at timestamp with time zone NOT NULL DEFAULT now(),
-  author_individual_uuid uuid NOT NULL DEFAULT gen_random_uuid(),
-  filling_uuid uuid NOT NULL DEFAULT gen_random_uuid(),
-  CONSTRAINT fillings_filed_by_org_relation_pkey PRIMARY KEY (relation_uuid),
-  CONSTRAINT fillings_individual_authors_relation_filling_uuid_fkey FOREIGN KEY (filling_uuid) REFERENCES public.fillings(uuid) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT fillings_individual_authors_relatio_author_individual_uuid_fkey FOREIGN KEY (author_individual_uuid) REFERENCES public.organizations(uuid) ON DELETE CASCADE ON UPDATE CASCADE
+  human_uuid uuid NOT NULL,
+  filling_uuid uuid NOT NULL,
+  CONSTRAINT fillings_filed_by_individual_pkey PRIMARY KEY (uuid),
+  CONSTRAINT fillings_filed_by_individual_human_uuid_fkey FOREIGN KEY (human_uuid) REFERENCES public.humans(uuid),
+  CONSTRAINT fillings_filed_by_individual_filling_uuid_fkey FOREIGN KEY (filling_uuid) REFERENCES public.fillings(uuid)
 );
-ALTER TABLE public.fillings_filed_by_org_relation ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.fillings_filed_by_individual ENABLE ROW LEVEL SECURITY;
 
 -- Fillings on behalf of org relation
 CREATE TABLE public.fillings_on_behalf_of_org_relation (
@@ -106,7 +120,25 @@ CREATE TABLE public.fillings_on_behalf_of_org_relation (
   filling_uuid uuid NOT NULL DEFAULT gen_random_uuid(),
   author_organization_uuid uuid NOT NULL DEFAULT gen_random_uuid(),
   CONSTRAINT fillings_on_behalf_of_org_relation_pkey PRIMARY KEY (relation_uuid),
-  CONSTRAINT fillings_organization_authors_rel_author_organization_uuid_fkey FOREIGN KEY (author_organization_uuid) REFERENCES public.organizations(uuid) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT fillings_organization_authors_relation_filling_uuid_fkey FOREIGN KEY (filling_uuid) REFERENCES public.fillings(uuid) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT fillings_organization_authors_rel_author_organization_uuid_fkey FOREIGN KEY (author_organization_uuid) REFERENCES public.organizations(uuid),
+  CONSTRAINT fillings_organization_authors_relation_filling_uuid_fkey FOREIGN KEY (filling_uuid) REFERENCES public.fillings(uuid)
 );
 ALTER TABLE public.fillings_on_behalf_of_org_relation ENABLE ROW LEVEL SECURITY;
+
+-- Individual offical party to docket
+CREATE TABLE public.individual_offical_party_to_docket (
+  uuid uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  docket_uuid uuid NOT NULL,
+  individual_uuid uuid NOT NULL,
+  representing_org_uuid uuid,
+  party_email_contact text NOT NULL,
+  party_phone_contact text NOT NULL,
+  employed_by_org uuid,
+  CONSTRAINT individual_offical_party_to_docket_pkey PRIMARY KEY (uuid),
+  CONSTRAINT individual_offical_party_to_docket_employed_by_org_fkey FOREIGN KEY (employed_by_org) REFERENCES public.organizations(uuid),
+  CONSTRAINT individual_offical_party_to_docket_docket_uuid_fkey FOREIGN KEY (docket_uuid) REFERENCES public.dockets(uuid),
+  CONSTRAINT individual_offical_party_to_docket_individual_uuid_fkey FOREIGN KEY (individual_uuid) REFERENCES public.humans(uuid),
+  CONSTRAINT individual_offical_party_to_docket_representing_org_uuid_fkey FOREIGN KEY (representing_org_uuid) REFERENCES public.organizations(uuid)
+);
+ALTER TABLE public.individual_offical_party_to_docket ENABLE ROW LEVEL SECURITY;
