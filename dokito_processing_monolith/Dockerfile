@@ -7,23 +7,29 @@ ENV RUSTC_WRAPPER=sccache SCCACHE_DIR=/sccache
 
 FROM base AS planner
 WORKDIR /app
-COPY . .
+COPY dokito-backend/dokito_processing_monolith/ ./dokito_processing_monolith/
+COPY dokito-backend/dokito_types/ ./dokito_types/
+COPY scrapers/openscraper_types/ ./scrapers/openscraper_types/
+WORKDIR /app/dokito_processing_monolith
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
   --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
   cargo chef prepare --recipe-path recipe.json
 
 FROM base as builder
 WORKDIR /app
-COPY --from=planner /app/recipe.json recipe.json
+COPY --from=planner /app/dokito_processing_monolith/recipe.json ./dokito_processing_monolith/recipe.json
+COPY dokito-backend/dokito_types/ ./dokito_types/
+COPY scrapers/openscraper_types/ ./scrapers/openscraper_types/
+WORKDIR /app/dokito_processing_monolith
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
   --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
   cargo chef cook --release --recipe-path recipe.json
-COPY . .
+COPY dokito-backend/dokito_processing_monolith/ .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
   --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
   cargo build --release
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY --from=builder /app/target/release/openscraper_processing /usr/local/bin
-ENTRYPOINT ["/usr/local/bin/openscraper_processing"]
+COPY --from=builder /app/dokito_processing_monolith/target/release/dokito_processing_monolith /usr/local/bin
+ENTRYPOINT ["/usr/local/bin/dokito_processing_monolith"]
