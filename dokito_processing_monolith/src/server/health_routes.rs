@@ -1,5 +1,4 @@
-
-use aide::axum::{routing::get, ApiRouter};
+use aide::axum::{ApiRouter, routing::get};
 use mycorrhiza_common::llm_deepinfra::test_deepinfra;
 
 async fn return_healthy() -> &'static str {
