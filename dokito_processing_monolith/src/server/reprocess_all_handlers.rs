@@ -86,7 +86,7 @@ async fn get_initial_govid_list_to_process(
 }
 
 pub async fn download_dokito_cases_with_dates() -> anyhow::Result<BTreeMap<NaiveDate, String>> {
-    let pool = get_dokito_pool().await?;
+    let pool = get_dokito_pool()?;
     let results = sqlx::query!("SELECT docket_govid, opened_date FROM public.dockets")
         .fetch_all(pool)
         .await?;

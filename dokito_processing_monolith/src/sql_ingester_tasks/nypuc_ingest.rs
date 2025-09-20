@@ -91,7 +91,7 @@ pub async fn get_all_ny_puc_data(purge_data: bool) -> anyhow::Result<()> {
     info!("Got request to ingest all nypuc data.");
     let reqwest_client = Client::new();
 
-    let pool = get_dokito_pool().await?;
+    let pool = get_dokito_pool()?;
     info!("Created pg pool");
 
     // Drop all existing tables first

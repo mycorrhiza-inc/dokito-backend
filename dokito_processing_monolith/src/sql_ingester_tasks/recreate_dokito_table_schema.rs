@@ -40,7 +40,7 @@ impl ExecuteUserTask for RecreateDokitoTableSchema {
 
 pub async fn recreate_schema() -> anyhow::Result<()> {
     info!("Got request to recreate schema");
-    let pool = get_dokito_pool().await?;
+    let pool = get_dokito_pool()?;
     info!("Created pg pool");
 
     let mut migrator = sqlx::migrate!("./src/sql_ingester_tasks/migrations");
