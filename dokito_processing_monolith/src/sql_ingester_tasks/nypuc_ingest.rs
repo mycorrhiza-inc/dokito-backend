@@ -23,7 +23,10 @@ use mycorrhiza_common::{
 };
 use tracing::{info, warn};
 
-use crate::{data_processing_traits::Revalidate, processing::process_case};
+use crate::{
+    data_processing_traits::Revalidate, processing::process_case,
+    sql_ingester_tasks::dokito_sql_connection::get_dokito_pool,
+};
 
 #[derive(Clone, Copy, Default, Deserialize, JsonSchema)]
 pub struct NyPucIngestPurgePrevious {}
@@ -88,11 +91,7 @@ pub async fn get_all_ny_puc_data(purge_data: bool) -> anyhow::Result<()> {
     info!("Got request to ingest all nypuc data.");
     let reqwest_client = Client::new();
 
-    let db_url = &**DEFAULT_POSTGRES_CONNECTION_URL;
-    let pool = PgPoolOptions::new()
-        .max_connections(40)
-        .connect(db_url)
-        .await?;
+    let pool = get_dokito_pool().await?;
     info!("Created pg pool");
 
     // Drop all existing tables first
@@ -203,12 +202,6 @@ async fn ingest_wrapped_ny_data(case_id: &str, pool: &PgPool, ignore_existing: b
         }
     }
 }
-
-pub static DEFAULT_POSTGRES_CONNECTION_URL: LazyLock<String> = LazyLock::new(|| {
-    env::var("POSTGRES_CONNECTION")
-        .or(env::var("DATABASE_URL"))
-        .expect("POSTGRES_CONNECTION or DATABASE_URL should be set.")
-});
 
 pub async fn ingest_sql_case_with_retries(
     case: &ProcessedGenericDocket,

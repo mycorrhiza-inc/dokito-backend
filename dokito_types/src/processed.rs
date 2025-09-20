@@ -70,32 +70,21 @@ pub enum ProcessedArtificalPerson {
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 struct ProcessedGenericHuman {
     pub human_name: NonEmptyString,
-    #[serde(default)]
     pub object_uuid: Uuid,
-    #[serde(default)]
     pub western_first_name: String,
-    #[serde(default)]
     pub western_last_name: String,
-    #[serde(default)]
     pub contact_emails: Vec<String>,
-    #[serde(default)]
     pub contact_phone_numbers: Vec<String>,
-    #[serde(default)]
     pub representing_company: Option<ProcessedGenericOrganization>,
-    #[serde(default)]
     pub employed_by: Option<ProcessedGenericOrganization>,
-    #[serde(default)]
     pub title: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 struct ProcessedGenericOrganization {
     pub truncated_org_name: NonEmptyString,
-    #[serde(default)]
     pub org_suffix: String,
-    #[serde(default)]
     pub object_uuid: Uuid,
-    #[serde(default)]
     pub org_type: OrganizationType,
 }
 

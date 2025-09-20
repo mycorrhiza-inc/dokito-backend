@@ -19,7 +19,7 @@ use crate::{
         DocketAddress, download_openscrapers_object, list_processed_cases_for_jurisdiction,
         list_raw_cases_for_jurisdiction, make_s3_client, upload_object,
     },
-    sql_ingester_tasks::nypuc_ingest::DEFAULT_POSTGRES_CONNECTION_URL,
+    sql_ingester_tasks::dokito_sql_connection::get_dokito_pool,
     types::{jurisdictions::JurisdictionInfo, processed::ProcessedGenericDocket},
 };
 
@@ -86,13 +86,9 @@ async fn get_initial_govid_list_to_process(
 }
 
 pub async fn download_dokito_cases_with_dates() -> anyhow::Result<BTreeMap<NaiveDate, String>> {
-    let db_url = &**DEFAULT_POSTGRES_CONNECTION_URL;
-    let pool = PgPoolOptions::new()
-        .max_connections(10)
-        .connect(db_url)
-        .await?;
+    let pool = get_dokito_pool().await?;
     let results = sqlx::query!("SELECT docket_govid, opened_date FROM public.dockets")
-        .fetch_all(&pool)
+        .fetch_all(pool)
         .await?;
     let bmap = results
         .into_iter()

@@ -7,7 +7,7 @@ use tracing::info;
 
 use mycorrhiza_common::tasks::ExecuteUserTask;
 
-use super::nypuc_ingest::DEFAULT_POSTGRES_CONNECTION_URL;
+use crate::sql_ingester_tasks::dokito_sql_connection::get_dokito_pool;
 
 #[derive(Clone, Copy, Default, Deserialize, JsonSchema)]
 pub struct RecreateDokitoTableSchema {}
@@ -40,8 +40,7 @@ impl ExecuteUserTask for RecreateDokitoTableSchema {
 
 pub async fn recreate_schema() -> anyhow::Result<()> {
     info!("Got request to recreate schema");
-    let db_url = &**DEFAULT_POSTGRES_CONNECTION_URL;
-    let pool = PgPoolOptions::new().connect(db_url).await?;
+    let pool = get_dokito_pool().await?;
     info!("Created pg pool");
 
     let mut migrator = sqlx::migrate!("./src/sql_ingester_tasks/migrations");
@@ -54,7 +53,7 @@ pub async fn recreate_schema() -> anyhow::Result<()> {
 
     info!("Creating tables");
     // create_schema(&pool).await?;
-    create_schema(&pool, &mut migrator).await?;
+    create_schema(pool, &mut migrator).await?;
 
     info!("Successfully recreated schema");
 

@@ -19,8 +19,8 @@ use crate::{
     data_processing_traits::Revalidate,
     processing::process_case,
     server::s3_routes::JurisdictionPath,
-    sql_ingester_tasks::nypuc_ingest::{
-        DEFAULT_POSTGRES_CONNECTION_URL, ingest_sql_case_with_retries,
+    sql_ingester_tasks::{
+        dokito_sql_connection::get_dokito_pool, nypuc_ingest::ingest_sql_case_with_retries,
     },
 };
 
@@ -80,13 +80,9 @@ pub async fn manual_fully_process_dockets_right_now(
         .flatten() // This removes None values
         .collect();
 
-    let db_url = &**DEFAULT_POSTGRES_CONNECTION_URL;
-    info!("Connecting to database");
-    let pool = PgPoolOptions::new()
-        .max_connections(30)
-        .connect(db_url)
+    let pool = get_dokito_pool()
         .await
-        .unwrap();
+        .map_err(|_err| "Could not get database connection".to_string())?;
     info!("Database connection established");
 
     let tries = 3;
