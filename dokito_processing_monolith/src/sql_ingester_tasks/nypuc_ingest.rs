@@ -368,32 +368,8 @@ pub async fn ingest_sql_nypuc_case(
             .await?;
         }
 
-        for indiv_author in filling.individual_authors.iter() {
-            let org_uuid = fetch_or_insert_new_orgname(indiv_author, pool).await?;
-
-            sqlx::query!(
-                "INSERT INTO fillings_filed_by_org_relation (author_individual_uuid, filling_uuid) VALUES ($1, $2)",
-                org_uuid,
-                filling_uuid
-            )
-            .execute(pool)
-            .await?;
-        }
-
-        for org_author in filling.organization_authors.iter() {
-            let org_uuid = fetch_or_insert_new_orgname(org_author, pool).await?;
-            sqlx::query!(
-                "INSERT INTO fillings_on_behalf_of_org_relation (author_organization_uuid, filling_uuid) VALUES ($1, $2)",
-                org_uuid,
-                filling_uuid
-            )
-            .execute(pool)
-            .await?;
-        }
-    }
     tracing::info!(govid=%case.case_govid, uuid=%docket_uuid,"Successfully processed case with no errors");
 
-    Ok(())
 }
 
 async fn fetch_or_insert_new_orgname(

@@ -1,7 +1,9 @@
 use std::convert::Infallible;
 
 use chrono::{NaiveDate, Utc};
+use dokito_types::processed::{ProcessedArtificalPerson, ProcessedGenericHuman};
 use futures_util::{StreamExt, stream};
+use sqlx::PgPool;
 use tracing::warn;
 use uuid::Uuid;
 
@@ -11,6 +13,7 @@ use crate::processing::llm_prompts::{clean_up_author_list, split_and_fix_author_
 use crate::processing::match_raw_processed::{
     match_raw_attaches_to_processed_attaches, match_raw_fillings_to_processed_fillings,
 };
+use crate::sql_ingester_tasks::dokito_sql_connection::get_dokito_pool;
 use crate::types::processed::{
     ProcessedGenericAttachment, ProcessedGenericDocket, ProcessedGenericFiling,
 };
@@ -163,6 +166,7 @@ impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
         Ok(final_processed_docket)
     }
 }
+
 impl ProcessFrom<RawGenericFiling> for ProcessedGenericFiling {
     type ParseError = Infallible;
     type ExtraData = IndexExtraData;
@@ -175,6 +179,7 @@ impl ProcessFrom<RawGenericFiling> for ProcessedGenericFiling {
             .as_ref()
             .map(|v| v.object_uuid)
             .unwrap_or_else(Uuid::new_v4);
+        let pg_pool = get_dokito_pool().unwrap();
         let (processed_attach_map, cached_orgauthorlist, cached_individualauthorllist) =
             match cached {
                 Some(filling) => (

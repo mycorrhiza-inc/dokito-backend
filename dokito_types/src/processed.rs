@@ -68,7 +68,7 @@ pub enum ProcessedArtificalPerson {
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
-struct ProcessedGenericHuman {
+pub struct ProcessedGenericHuman {
     pub human_name: NonEmptyString,
     pub object_uuid: Uuid,
     pub western_first_name: String,
@@ -81,7 +81,7 @@ struct ProcessedGenericHuman {
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
-struct ProcessedGenericOrganization {
+pub struct ProcessedGenericOrganization {
     pub truncated_org_name: NonEmptyString,
     pub org_suffix: String,
     pub object_uuid: Uuid,
@@ -90,7 +90,7 @@ struct ProcessedGenericOrganization {
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Copy, Default)]
 #[serde(rename_all = "snake_case")]
-enum OrganizationType {
+pub enum OrganizationType {
     #[default]
     Unknown,
     ForProfit,
@@ -111,9 +111,9 @@ pub struct ProcessedGenericFiling {
     #[serde(default)]
     pub name: String,
     #[serde(default)]
-    pub organization_authors: Vec<OrgName>,
+    pub organization_authors: Vec<ProcessedGenericOrganization>,
     #[serde(default)]
-    pub individual_authors: Vec<OrgName>,
+    pub individual_authors: Vec<ProcessedGenericHuman>,
     #[serde(default)]
     pub filing_type: String,
     #[serde(default)]
