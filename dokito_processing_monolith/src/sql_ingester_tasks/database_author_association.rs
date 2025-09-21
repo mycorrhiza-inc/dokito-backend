@@ -123,15 +123,16 @@ async fn associate_organization_with_name(
     if org.object_uuid.is_nil() {
         org.object_uuid = Uuid::new_v4();
     }
+    let org_type = org.org_type.to_string();
 
     sqlx::query!(
         "INSERT INTO organizations (uuid, name, aliases, description, artifical_person_type, org_suffix) VALUES ($1, $2, $3, $4, $5, $6)",
         org.object_uuid,
-        org.truncated_org_name,
-        &vec![org.truncated_org_name.clone()],
+        org.truncated_org_name.as_str(),
+        &vec![org.truncated_org_name.to_string()],
         "",
-        "organization",
-        ""
+        &org_type,
+        &org.org_suffix,
     )
     .execute(pgpool)
     .await?;
@@ -140,15 +141,20 @@ async fn associate_organization_with_name(
 }
 
 async fn upload_docket_party_human_connection(
-    upload_party: &ProcessedGenericHuman,
-    parent_docket: &ProcessedGenericDocket,
+    upload_party: &mut ProcessedGenericHuman,
+    parent_docket_uuid: Uuid,
     pool: &PgPool,
 ) -> Result<(), anyhow::Error> {
-    if upload_party.object_uuid.is_nil() {
-        bail!("Uploading party must have a non nil uuid.")
-    }
-    if parent_docket.object_uuid.is_nil() {
+    if parent_docket_uuid.is_nil() {
         bail!("Uploading docket must have a non nil uuid.")
+    }
+
+    associate_individual_author_with_name(upload_party, pool).await?;
+
+    if upload_party.object_uuid.is_nil() {
+        unreachable!(
+            "Uploading party must have a non nil uuid, this should be impossible since it should have just been associated with one in the database if it did not exist.."
+        )
     }
 
     let party_email = upload_party
@@ -164,7 +170,7 @@ async fn upload_docket_party_human_connection(
 
     sqlx::query!(
         "INSERT INTO individual_offical_party_to_docket (docket_uuid, individual_uuid, party_email_contact, party_phone_contact) VALUES ($1, $2, $3, $4)",
-        parent_docket.object_uuid,
+        parent_docket_uuid,
         upload_party.object_uuid,
         party_email,
         party_phone
@@ -176,23 +182,22 @@ async fn upload_docket_party_human_connection(
 }
 
 async fn upload_filling_organization_author(
-    upload_org_author: &ProcessedGenericOrganization,
-    filling: &ProcessedGenericFiling,
+    upload_org_author: &mut ProcessedGenericOrganization,
+    parent_filling_uuid: Uuid,
     pool: &PgPool,
 ) -> Result<(), anyhow::Error> {
     if upload_org_author.object_uuid.is_nil() {
         bail!("Uploading filling author must have a non nil uuid.")
     }
-    if filling.object_uuid.is_nil() {
+    if parent_filling_uuid.is_nil() {
         bail!("Uploading filling must have a non nil uuid.")
     }
     let org_uuid = upload_org_author.object_uuid;
-    let filling_uuid = filling.object_uuid;
 
     sqlx::query!(
             "INSERT INTO fillings_on_behalf_of_org_relation (author_organization_uuid, filling_uuid) VALUES ($1, $2)",
             org_uuid,
-            filling_uuid
+            parent_filling_uuid
         )
         .execute(pool)
         .await?;
@@ -201,20 +206,20 @@ async fn upload_filling_organization_author(
 
 async fn upload_filling_human_author(
     upload_author: &ProcessedGenericHuman,
-    filling: &ProcessedGenericFiling,
+    parent_filling_uuid: Uuid,
     pool: &PgPool,
 ) -> Result<(), anyhow::Error> {
     if upload_author.object_uuid.is_nil() {
         bail!("Uploading filling author must have a non nil uuid.")
     }
-    if filling.object_uuid.is_nil() {
+    if parent_filling_uuid.is_nil() {
         bail!("Uploading filling must have a non nil uuid.")
     }
 
     sqlx::query!(
         "INSERT INTO fillings_filed_by_individual (human_uuid, filling_uuid) VALUES ($1, $2)",
         upload_author.object_uuid,
-        filling.object_uuid
+        parent_filling_uuid
     )
     .execute(pool)
     .await?;

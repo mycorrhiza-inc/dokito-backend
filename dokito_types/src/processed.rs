@@ -98,6 +98,12 @@ pub enum OrganizationType {
     GovernmentAgency,
 }
 
+impl ToString for OrganizationType {
+    fn to_string(&self) -> String {
+        serde_json::to_string(self).unwrap()
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct ProcessedGenericFiling {
     pub filed_date: Option<NaiveDate>,
