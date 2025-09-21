@@ -34,6 +34,7 @@ pub struct ProcessedGenericAttachment {
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct OrgName {
     pub name: NonEmptyString,
+    #[serde(default)]
     pub suffix: String,
 }
 
@@ -150,7 +151,7 @@ pub struct ProcessedGenericDocket {
     #[serde(default)]
     pub industry: String,
     #[serde(default)]
-    pub petitioner_list: Vec<OrgName>,
+    pub petitioner_list: Vec<ProcessedGenericOrganization>,
     #[serde(default)]
     pub hearing_officer: String,
     #[serde(default)]
@@ -158,9 +159,7 @@ pub struct ProcessedGenericDocket {
     #[serde(default, deserialize_with = "deserialize_vec_or_map")]
     pub filings: Vec<ProcessedGenericFiling>, // 👈 same trick here
     #[serde(default)]
-    pub case_parties: Vec<ProcessedArtificalPerson>,
-    #[serde(default)]
-    pub forwarded_raw_parties: Vec<RawGenericParty>,
+    pub case_parties: Vec<ProcessedGenericHuman>,
     #[serde(default)]
     pub extra_metadata: HashMap<String, serde_json::Value>,
     #[serde(default = "Utc::now")]

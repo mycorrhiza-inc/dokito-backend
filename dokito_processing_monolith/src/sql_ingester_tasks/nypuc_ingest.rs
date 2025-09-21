@@ -25,7 +25,7 @@ use tracing::{info, warn};
 
 use crate::{
     data_processing_traits::Revalidate, processing::process_case,
-    sql_ingester_tasks::dokito_sql_connection::get_dokito_pool,
+    sql_ingester_tasks::{dokito_sql_connection::get_dokito_pool, database_author_association::*},
 };
 
 #[derive(Clone, Copy, Default, Deserialize, JsonSchema)]
@@ -338,6 +338,18 @@ pub async fn ingest_sql_nypuc_case(
         .fetch_one(pool)
         .await?;
 
+        // Associate individual authors using the proper association functions
+        for mut individual_author in filling.individual_authors.iter().cloned() {
+            associate_individual_author_with_name(&mut individual_author, pool).await?;
+            upload_filling_human_author(&individual_author, filling_uuid, pool).await?;
+        }
+
+        // Associate organization authors using the proper association functions
+        for mut org_author in filling.organization_authors.iter().cloned() {
+            associate_organization_with_name(&mut org_author, pool).await?;
+            upload_filling_organization_author(&mut org_author, filling_uuid, pool).await?;
+        }
+
         for attachment in filling.attachments.iter() {
             let hashstr = if let Some(hash) = attachment.hash {
                 hash.to_string()
@@ -372,42 +384,6 @@ pub async fn ingest_sql_nypuc_case(
     tracing::info!(govid=%case.case_govid, uuid=%docket_uuid,"Successfully processed case with no errors");
 }
 
-async fn fetch_or_insert_new_orgname(
-    org_author: &OrgName,
-    pool: &Pool<Postgres>,
-) -> Result<Uuid, anyhow::Error> {
-    let org_author_str = org_author.name.as_str();
-    let org_record  = sqlx::query!(
-        "SELECT uuid, org_suffix FROM organizations WHERE name = $1 AND artifical_person_type = 'organization'",
-        org_author_str,
-    ).fetch_optional(pool)
-    .await?;
-
-    let org_uuid = if let Some(org_record) = org_record {
-        if org_record.org_suffix.is_empty() && !org_author.suffix.is_empty() {
-            let _ = sqlx::query!(
-                "UPDATE organizations SET org_suffix = $1 WHERE uuid = $2",
-                &org_author.suffix,
-                &org_record.uuid
-            )
-            .execute(pool)
-            .await?;
-        };
-        org_record.uuid
-    } else {
-        let org_suffix = &*org_author.suffix;
-        let new_org: Uuid = sqlx::query_scalar!(
-                    "INSERT INTO organizations (name, artifical_person_type, aliases, org_suffix) VALUES ($1, 'organization', $2, $3) RETURNING uuid",
-                    org_author_str,
-                    &vec![org_author_str.to_string()],
-                    org_suffix,
-                )
-                .fetch_one(pool)
-                .await?;
-        new_org
-    };
-    Ok(org_uuid)
-}
 
 pub async fn delete_all_data(pool: &PgPool) -> anyhow::Result<()> {
     info!("Starting full data deletion...");
