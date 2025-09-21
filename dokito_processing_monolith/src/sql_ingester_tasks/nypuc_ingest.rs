@@ -367,9 +367,9 @@ pub async fn ingest_sql_nypuc_case(
             ).execute(pool)
             .await?;
         }
+    }
 
     tracing::info!(govid=%case.case_govid, uuid=%docket_uuid,"Successfully processed case with no errors");
-
 }
 
 async fn fetch_or_insert_new_orgname(
