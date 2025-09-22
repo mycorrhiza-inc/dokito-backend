@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use dokito_types::{
     env_vars::DIGITALOCEAN_S3,
     jurisdictions::JurisdictionInfo,
-    processed::{OrgName, ProcessedGenericDocket},
+    processed::{OrgName, ProcessedGenericDocket, ProcessedGenericOrganization},
     raw::RawGenericDocket,
     s3_stuff::{
         DocketAddress, list_processed_cases_for_jurisdiction, list_raw_cases_for_jurisdiction,
@@ -24,8 +24,9 @@ use mycorrhiza_common::{
 use tracing::{info, warn};
 
 use crate::{
-    data_processing_traits::Revalidate, processing::process_case,
-    sql_ingester_tasks::{dokito_sql_connection::get_dokito_pool, database_author_association::*},
+    data_processing_traits::Revalidate,
+    processing::process_case,
+    sql_ingester_tasks::{database_author_association::*, dokito_sql_connection::get_dokito_pool},
 };
 
 #[derive(Clone, Copy, Default, Deserialize, JsonSchema)]
@@ -203,7 +204,7 @@ async fn ingest_wrapped_ny_data(case_id: &str, pool: &PgPool, ignore_existing: b
 }
 
 pub async fn ingest_sql_case_with_retries(
-    case: &ProcessedGenericDocket,
+    case: &mut ProcessedGenericDocket,
     pool: &Pool<Postgres>,
     ignore_existing: bool,
     tries: usize,
@@ -237,14 +238,14 @@ pub async fn ingest_sql_case_with_retries(
 }
 
 pub async fn ingest_sql_nypuc_case(
-    case: &ProcessedGenericDocket,
+    case: &mut ProcessedGenericDocket,
     pool: &Pool<Postgres>,
     _ignore_existing: bool,
 ) -> anyhow::Result<()> {
-    let petitioner_list: &[OrgName] = &case.petitioner_list;
+    let petitioner_list: &[ProcessedGenericOrganization] = &case.petitioner_list;
     let petitioner_strings = petitioner_list
         .iter()
-        .map(|n| n.name.to_string())
+        .map(|n| n.truncated_org_name.to_string())
         .collect::<Vec<_>>();
     let mut case_type = case.case_type.clone();
     let mut case_subtype = case.case_subtype.clone();
@@ -288,27 +289,20 @@ pub async fn ingest_sql_nypuc_case(
     .fetch_one(pool)
     .await?;
 
-    for petitioner in petitioner_list.iter() {
-        let petitioner_uuid = fetch_or_insert_new_orgname(petitioner, pool).await?;
-        sqlx::query!(
-            "INSERT INTO docket_petitioned_by_org (docket_uuid, petitioner_uuid) VALUES ($1,$2)",
-            docket_uuid,
-            petitioner_uuid
-        )
-        .execute(pool)
-        .await?;
+    for mut petitioner in petitioner_list.iter().cloned() {
+        upload_docket_petitioner_org_connection(&mut petitioner, docket_uuid, pool).await?;
     }
 
     for filling in case.filings.iter() {
         let individual_author_strings = filling
             .individual_authors
             .iter()
-            .map(|s| s.name.to_string())
+            .map(|s| s.human_name.to_string())
             .collect::<Vec<_>>();
         let organization_author_strings = filling
             .organization_authors
             .iter()
-            .map(|s| s.name.to_string())
+            .map(|s| s.truncated_org_name.to_string())
             .collect::<Vec<_>>();
         let filling_uuid: Uuid = sqlx::query_scalar!(
             "INSERT INTO fillings (uuid, docket_uuid, docket_govid, individual_author_strings, organization_author_strings, filed_date, filling_type, filling_name, filling_description, openscrapers_id)
@@ -340,13 +334,11 @@ pub async fn ingest_sql_nypuc_case(
 
         // Associate individual authors using the proper association functions
         for mut individual_author in filling.individual_authors.iter().cloned() {
-            associate_individual_author_with_name(&mut individual_author, pool).await?;
-            upload_filling_human_author(&individual_author, filling_uuid, pool).await?;
+            upload_filling_human_author(&mut individual_author, filling_uuid, pool).await?;
         }
 
         // Associate organization authors using the proper association functions
         for mut org_author in filling.organization_authors.iter().cloned() {
-            associate_organization_with_name(&mut org_author, pool).await?;
             upload_filling_organization_author(&mut org_author, filling_uuid, pool).await?;
         }
 
@@ -383,7 +375,6 @@ pub async fn ingest_sql_nypuc_case(
 
     tracing::info!(govid=%case.case_govid, uuid=%docket_uuid,"Successfully processed case with no errors");
 }
-
 
 pub async fn delete_all_data(pool: &PgPool) -> anyhow::Result<()> {
     info!("Starting full data deletion...");

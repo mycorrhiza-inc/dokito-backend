@@ -7,7 +7,7 @@ use sqlx::{PgPool, query};
 use std::collections::BTreeSet;
 use uuid::Uuid;
 
-async fn associate_individual_author_with_name(
+pub async fn associate_individual_author_with_name(
     individual: &mut ProcessedGenericHuman,
     pool: &PgPool,
 ) -> Result<(), anyhow::Error> {
@@ -67,6 +67,12 @@ async fn associate_individual_author_with_name(
         return Ok(());
     };
     // At this point a new object is very unlikely to exist, so go ahead and add a new object.
+
+    let mut provisional_uuid = individual.object_uuid;
+
+    if provisional_uuid.is_nil() {
+        provisional_uuid = Uuid::new_v4();
+    }
     if individual.object_uuid.is_nil() {
         individual.object_uuid = Uuid::new_v4();
     };
@@ -79,7 +85,7 @@ async fn associate_individual_author_with_name(
 
     sqlx::query!(
         "INSERT INTO humans (uuid, name, western_first_name, western_last_name, contact_emails, contact_phone_numbers) VALUES ($1, $2, $3, $4, $5, $6)",
-        individual.object_uuid,
+        provisional_uuid,
         name,
         individual.western_first_name,
         individual.western_last_name,
@@ -88,20 +94,21 @@ async fn associate_individual_author_with_name(
     )
     .execute(pool)
     .await?;
+    individual.object_uuid = provisional_uuid;
 
     Ok(())
 }
 
 // Go ahead and write the same function for an organization
 
-async fn associate_organization_with_name(
+pub async fn associate_organization_with_name(
     org: &mut ProcessedGenericOrganization,
-    pgpool: &PgPool,
+    pool: &PgPool,
 ) -> Result<(), anyhow::Error> {
     if !org.object_uuid.is_nil() {
         let org_id = org.object_uuid;
         let match_on_uuid = query!("SELECT * FROM public.organizations WHERE uuid=$1", org_id)
-            .fetch_optional(pgpool)
+            .fetch_optional(pool)
             .await?;
         if let Some(matched_record) = match_on_uuid
             && matched_record.name == org.truncated_org_name
@@ -113,34 +120,36 @@ async fn associate_organization_with_name(
     let org_name = org.truncated_org_name.as_str();
 
     let match_on_org_name = query!("SELECT * FROM public.organizations WHERE name=$1", org_name)
-        .fetch_optional(pgpool)
+        .fetch_optional(pool)
         .await?;
     if let Some(matched_record) = match_on_org_name {
         org.object_uuid = matched_record.uuid;
         return Ok(());
     }
+    let mut provisional_uuid = org.object_uuid;
 
-    if org.object_uuid.is_nil() {
-        org.object_uuid = Uuid::new_v4();
+    if provisional_uuid.is_nil() {
+        provisional_uuid = Uuid::new_v4();
     }
     let org_type = org.org_type.to_string();
 
     sqlx::query!(
         "INSERT INTO organizations (uuid, name, aliases, description, artifical_person_type, org_suffix) VALUES ($1, $2, $3, $4, $5, $6)",
-        org.object_uuid,
+        provisional_uuid,
         org.truncated_org_name.as_str(),
         &vec![org.truncated_org_name.to_string()],
         "",
         &org_type,
         &org.org_suffix,
     )
-    .execute(pgpool)
+    .execute(pool)
     .await?;
+    org.object_uuid = provisional_uuid;
 
     Ok(())
 }
 
-async fn upload_docket_party_human_connection(
+pub async fn upload_docket_party_human_connection(
     upload_party: &mut ProcessedGenericHuman,
     parent_docket_uuid: Uuid,
     pool: &PgPool,
@@ -181,16 +190,44 @@ async fn upload_docket_party_human_connection(
     Ok(())
 }
 
-async fn upload_filling_organization_author(
+pub async fn upload_docket_petitioner_org_connection(
+    upload_petitioner: &mut ProcessedGenericOrganization,
+    parent_docket_uuid: Uuid,
+    pool: &PgPool,
+) -> Result<(), anyhow::Error> {
+    if parent_docket_uuid.is_nil() {
+        bail!("Uploading filling must have a non nil uuid.")
+    }
+    associate_organization_with_name(upload_petitioner, pool).await?;
+    if upload_petitioner.object_uuid.is_nil() {
+        unreachable!(
+            "Uploading filling author must have a non nil uuid. This should be impossible because it just happened in the previous step"
+        )
+    };
+    let petitioner_uuid = upload_petitioner.object_uuid;
+
+    sqlx::query!(
+        "INSERT INTO docket_petitioned_by_org (docket_uuid, petitioner_uuid) VALUES ($1,$2)",
+        parent_docket_uuid,
+        petitioner_uuid
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+pub async fn upload_filling_organization_author(
     upload_org_author: &mut ProcessedGenericOrganization,
     parent_filling_uuid: Uuid,
     pool: &PgPool,
 ) -> Result<(), anyhow::Error> {
-    if upload_org_author.object_uuid.is_nil() {
-        bail!("Uploading filling author must have a non nil uuid.")
-    }
     if parent_filling_uuid.is_nil() {
         bail!("Uploading filling must have a non nil uuid.")
+    }
+    associate_organization_with_name(upload_org_author, pool).await?;
+    if upload_org_author.object_uuid.is_nil() {
+        unreachable!(
+            "Uploading filling author must have a non nil uuid. This should be impossible because it just happened in the previous step"
+        )
     }
     let org_uuid = upload_org_author.object_uuid;
 
@@ -204,16 +241,19 @@ async fn upload_filling_organization_author(
     Ok(())
 }
 
-async fn upload_filling_human_author(
-    upload_author: &ProcessedGenericHuman,
+pub async fn upload_filling_human_author(
+    upload_author: &mut ProcessedGenericHuman,
     parent_filling_uuid: Uuid,
     pool: &PgPool,
 ) -> Result<(), anyhow::Error> {
-    if upload_author.object_uuid.is_nil() {
-        bail!("Uploading filling author must have a non nil uuid.")
-    }
     if parent_filling_uuid.is_nil() {
         bail!("Uploading filling must have a non nil uuid.")
+    }
+    associate_individual_author_with_name(upload_author, pool).await?;
+    if upload_author.object_uuid.is_nil() {
+        unreachable!(
+            "Uploading filling author must have a non nil uuid, this should be impossible dispite it being validated on the previous line."
+        )
     }
 
     sqlx::query!(

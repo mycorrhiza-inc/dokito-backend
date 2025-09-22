@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use chrono::{DateTime, NaiveDate, Utc};
 use mycorrhiza_common::{file_extension::FileExtension, hash::Blake2bHash};
@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::{DefaultOnError, serde_as};
 use uuid::Uuid;
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Hash)]
 pub struct ProcessedGenericAttachment {
     #[serde(default)]
     pub name: String,
@@ -26,12 +26,12 @@ pub struct ProcessedGenericAttachment {
     #[serde(default)]
     pub attachment_subtype: String,
     #[serde(default)]
-    pub extra_metadata: HashMap<String, serde_json::Value>,
+    pub extra_metadata: BTreeMap<String, serde_json::Value>,
     #[serde(default)]
     pub hash: Option<Blake2bHash>,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Hash)]
 pub struct OrgName {
     pub name: NonEmptyString,
     #[serde(default)]
@@ -61,14 +61,14 @@ where
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Hash)]
 #[serde(untagged)]
 pub enum ProcessedArtificalPerson {
     Human(ProcessedGenericHuman),
     Organization(ProcessedGenericOrganization),
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Hash)]
 pub struct ProcessedGenericHuman {
     pub human_name: NonEmptyString,
     pub object_uuid: Uuid,
@@ -81,7 +81,7 @@ pub struct ProcessedGenericHuman {
     pub title: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Hash)]
 pub struct ProcessedGenericOrganization {
     pub truncated_org_name: NonEmptyString,
     pub org_suffix: String,
@@ -89,7 +89,7 @@ pub struct ProcessedGenericOrganization {
     pub org_type: OrganizationType,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Copy, Default)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Copy, Default, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum OrganizationType {
     #[default]
@@ -105,7 +105,7 @@ impl ToString for OrganizationType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Hash)]
 pub struct ProcessedGenericFiling {
     pub filed_date: Option<NaiveDate>,
     pub index_in_docket: u64,
@@ -131,7 +131,7 @@ pub struct ProcessedGenericFiling {
     pub extra_metadata: HashMap<String, serde_json::Value>,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Hash)]
 pub struct ProcessedGenericDocket {
     pub case_govid: NonEmptyString,
     #[serde(default)]
@@ -161,7 +161,7 @@ pub struct ProcessedGenericDocket {
     #[serde(default)]
     pub case_parties: Vec<ProcessedGenericHuman>,
     #[serde(default)]
-    pub extra_metadata: HashMap<String, serde_json::Value>,
+    pub extra_metadata: BTreeMap<String, serde_json::Value>,
     #[serde(default = "Utc::now")]
     pub indexed_at: DateTime<Utc>,
     #[serde(default = "Utc::now")]
