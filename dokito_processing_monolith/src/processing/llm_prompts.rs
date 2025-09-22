@@ -1,6 +1,8 @@
+use dokito_types::processed::{OrganizationType, ProcessedGenericOrganization};
 use mycorrhiza_common::llm_deepinfra::{cheap_prompt, strip_think};
 use non_empty_string::NonEmptyString;
 use serde::Serialize;
+use uuid::Uuid;
 
 use crate::types::processed::OrgName;
 
@@ -44,20 +46,24 @@ Response:
     json_res.map_err(anyhow::Error::from)
 }
 
-pub async fn split_and_fix_author_blob(auth_blob: &str) -> Vec<OrgName> {
-    if auth_blob.is_empty() {
+pub async fn split_and_fix_organization_names_blob(
+    org_blob: &str,
+) -> Vec<ProcessedGenericOrganization> {
+    if org_blob.is_empty() {
         return Vec::new();
     }
-    let Ok(llm_parsed_names) = org_split_from_dump(auth_blob).await else {
-        return clean_organization_name(auth_blob.to_string())
-            .as_slice()
-            .to_owned();
+    let Ok(llm_parsed_names) = org_split_from_dump(org_blob).await else {
+        return clean_organization_name(org_blob.to_string())
+            .map(|val| vec![val])
+            .unwrap_or_default();
     };
-    tracing::debug!(previous_name=%auth_blob, new_list =?llm_parsed_names,"Parsed list into a bunch of llm names.");
-    clean_up_author_list(llm_parsed_names)
+    tracing::debug!(previous_name=%org_blob, new_list =?llm_parsed_names,"Parsed list into a bunch of llm names.");
+    clean_up_organization_name_list(llm_parsed_names)
 }
 
-pub fn clean_up_author_list(raw_llmed_list: Vec<String>) -> Vec<OrgName> {
+pub fn clean_up_organization_name_list(
+    raw_llmed_list: Vec<String>,
+) -> Vec<ProcessedGenericOrganization> {
     raw_llmed_list
         .into_iter()
         .filter_map(clean_organization_name)
@@ -65,9 +71,9 @@ pub fn clean_up_author_list(raw_llmed_list: Vec<String>) -> Vec<OrgName> {
 }
 
 // The suffix should be a standardized lowercase string like ["llc", "co", "corp", "inc", "company", "ltd", "lp", "llp"]
-fn clean_organization_name(name: String) -> Option<OrgName> {
+fn clean_organization_name(org_name: String) -> Option<ProcessedGenericOrganization> {
     let trim_punctuation = &['\'', '.', ',', ' ', '"'];
-    let mut cleaned = name.trim().trim_matches(trim_punctuation).to_string();
+    let mut cleaned = org_name.trim().trim_matches(trim_punctuation).to_string();
 
     // Remove d/b/a patterns and everything after
     if let Some(dba_pos) = cleaned.to_lowercase().find(" d/b/a ") {
@@ -112,10 +118,26 @@ fn clean_organization_name(name: String) -> Option<OrgName> {
     // Ensure we have a nonempty name
     let nonempty_name = NonEmptyString::new(cleaned).ok()?;
 
-    Some(OrgName {
-        name: nonempty_name,
-        suffix: found_suffix.unwrap_or_default(),
+    Some(ProcessedGenericOrganization {
+        truncated_org_name: nonempty_name,
+        org_suffix: found_suffix.unwrap_or_default(),
+        org_type: OrganizationType::Unknown,
+        object_uuid: Uuid::nil(),
     })
+}
+
+pub async fn guess_at_organization_type(
+    org_info: &ProcessedGenericOrganization,
+) -> OrganizationType {
+    if org_info.org_type != OrganizationType::Unknown {
+        return org_info.org_type;
+    }
+    let reduced_name = org_info.truncated_org_name.as_str();
+    let suffix = org_info.org_suffix.as_str();
+    // TODO: use a cheap llm to guess at the organization type from the total list of organization
+    // types.
+    // If it fails just return
+    OrganizationType::Unknown
 }
 
 pub async fn guess_at_filling_title<T: AsRef<str> + Serialize>(attachment_names: &[T]) -> String {

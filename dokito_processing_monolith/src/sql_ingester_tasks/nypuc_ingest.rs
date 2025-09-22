@@ -304,12 +304,12 @@ pub async fn ingest_sql_nypuc_case(
         let individual_author_strings = filling
             .individual_authors
             .iter()
-            .map(|s| s.human_name.as_str())
+            .map(|s| s.human_name.to_string())
             .collect::<Vec<_>>();
         let organization_author_strings = filling
             .organization_authors
             .iter()
-            .map(|s| s.truncated_org_name.as_str())
+            .map(|s| s.truncated_org_name.to_string())
             .collect::<Vec<_>>();
         let filling_uuid: Uuid = sqlx::query_scalar!(
             "INSERT INTO fillings (uuid, docket_uuid, docket_govid, individual_author_strings, organization_author_strings, filed_date, filling_type, filling_name, filling_description, openscrapers_id)
@@ -339,7 +339,7 @@ pub async fn ingest_sql_nypuc_case(
         .fetch_one(pool)
         .await?;
         if filling_uuid != filling.object_uuid {
-            info!(filling_uuid, "Set filling to have new uuid");
+            info!(%filling_uuid, "Set filling to have new uuid");
             filling.object_uuid = filling_uuid;
         }
 
@@ -388,6 +388,7 @@ pub async fn ingest_sql_nypuc_case(
     }
 
     tracing::info!(govid=%case.case_govid, uuid=%docket_uuid,"Successfully processed case with no errors");
+    Ok(())
 }
 
 pub async fn delete_all_data(pool: &PgPool) -> anyhow::Result<()> {

@@ -106,9 +106,13 @@ pub async fn manual_fully_process_dockets_right_now(
                 tries, ignore_existing, "Ingesting docket into SQL"
             );
             // We don't return anything from this function as errors are handled internally
-            let _ =
-                ingest_sql_case_with_retries(&docket_clone, &pool_clone, ignore_existing, tries)
-                    .await;
+            let _ = ingest_sql_case_with_retries(
+                &mut docket_clone,
+                &pool_clone,
+                ignore_existing,
+                tries,
+            )
+            .await;
         }
     });
 

@@ -89,7 +89,7 @@ pub struct ProcessedGenericOrganization {
     pub org_type: OrganizationType,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Copy, Default, Hash)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Copy, Default, Hash, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum OrganizationType {
     #[default]
@@ -128,7 +128,7 @@ pub struct ProcessedGenericFiling {
     #[serde(default, deserialize_with = "deserialize_vec_or_map")]
     pub attachments: Vec<ProcessedGenericAttachment>, // 👈 handles both vec + map
     #[serde(default)]
-    pub extra_metadata: HashMap<String, serde_json::Value>,
+    pub extra_metadata: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Hash)]

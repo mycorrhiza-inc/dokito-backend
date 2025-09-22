@@ -9,7 +9,9 @@ use uuid::Uuid;
 
 use crate::data_processing_traits::{ProcessFrom, Revalidate, RevalidationOutcome};
 use crate::indexes::attachment_url_index::lookup_hash_from_url;
-use crate::processing::llm_prompts::{clean_up_author_list, split_and_fix_author_blob};
+use crate::processing::llm_prompts::{
+    clean_up_organization_name_list, split_and_fix_organization_names_blob,
+};
 use crate::processing::match_raw_processed::{
     match_raw_attaches_to_processed_attaches, match_raw_fillings_to_processed_fillings,
 };
@@ -142,10 +144,9 @@ impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
             .collect::<Vec<_>>()
             .await;
         processed_fillings.sort_by_key(|v| v.index_in_docket);
-        let llmed_petitioner_list = split_and_fix_author_blob(&input.petitioner).await;
+        let llmed_petitioner_list = split_and_fix_organization_names_blob(&input.petitioner).await;
         let final_processed_docket = ProcessedGenericDocket {
             object_uuid,
-            forwarded_raw_parties: input.case_parties.clone(),
             processed_at: Utc::now(),
             case_govid: input.case_govid.clone(),
             filings: processed_fillings,
@@ -159,7 +160,8 @@ impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
             closed_date: input.closed_date,
             case_parties: vec![],
             description: input.description.clone(),
-            extra_metadata: input.extra_metadata.clone(),
+            // Super hacky workaround until I can change the input type.
+            extra_metadata: input.extra_metadata.clone().into_iter().collect(),
             hearing_officer: input.hearing_officer.clone(),
             petitioner_list: llmed_petitioner_list,
         };
@@ -220,9 +222,9 @@ impl ProcessFrom<RawGenericFiling> for ProcessedGenericFiling {
             if let Some(org_authors) = cached_orgauthorlist {
                 org_authors
             } else if input.organization_authors.is_empty() {
-                split_and_fix_author_blob(&input.organization_authors_blob).await
+                split_and_fix_organization_names_blob(&input.organization_authors_blob).await
             } else {
-                clean_up_author_list(input.organization_authors)
+                clean_up_organization_name_list(input.organization_authors)
             }
         };
 
@@ -230,9 +232,10 @@ impl ProcessFrom<RawGenericFiling> for ProcessedGenericFiling {
             if let Some(individual_authors) = cached_individualauthorllist {
                 individual_authors
             } else if input.individual_authors.is_empty() {
-                split_and_fix_author_blob(&input.individual_authors_blob).await
+                vec![]
             } else {
-                clean_up_author_list(input.individual_authors)
+                tracing::error!("Individual author logic not implemented due to corrupted data.");
+                vec![]
             }
         };
 
@@ -246,7 +249,8 @@ impl ProcessFrom<RawGenericFiling> for ProcessedGenericFiling {
             filling_url: input.filling_url.clone(),
             filing_type: input.filing_type.clone(),
             description: input.description.clone(),
-            extra_metadata: input.extra_metadata.clone(),
+            // Super hacky workaround until I can change the input type.
+            extra_metadata: input.extra_metadata.clone().into_iter().collect(),
             organization_authors,
             individual_authors,
         };
