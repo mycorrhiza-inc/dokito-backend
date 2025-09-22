@@ -187,10 +187,10 @@ async fn ingest_wrapped_ny_data(case_id: &str, pool: &PgPool, ignore_existing: b
     };
     let case_res = get_processed_case_or_process_if_not_existing(&case_address).await;
     match case_res {
-        Ok(case) => {
+        Ok(mut case) => {
             const CASE_RETRIES: usize = 3;
             if let Err(e) =
-                ingest_sql_case_with_retries(&case, pool, ignore_existing, CASE_RETRIES).await
+                ingest_sql_case_with_retries(&mut case, pool, ignore_existing, CASE_RETRIES).await
             {
                 let err_debug = format!("{:?}", e);
                 tracing::error!(case_id = %case_id, error = %e, error_debug = &err_debug[..500], "Failed to ingest case, dispite retries.");
@@ -242,7 +242,7 @@ pub async fn ingest_sql_nypuc_case(
     pool: &Pool<Postgres>,
     _ignore_existing: bool,
 ) -> anyhow::Result<()> {
-    let petitioner_list: &[ProcessedGenericOrganization] = &case.petitioner_list;
+    let petitioner_list: &mut [ProcessedGenericOrganization] = &mut case.petitioner_list;
     let petitioner_strings = petitioner_list
         .iter()
         .map(|n| n.truncated_org_name.to_string())
@@ -288,21 +288,28 @@ pub async fn ingest_sql_nypuc_case(
     )
     .fetch_one(pool)
     .await?;
-
-    for mut petitioner in petitioner_list.iter().cloned() {
-        upload_docket_petitioner_org_connection(&mut petitioner, docket_uuid, pool).await?;
+    if docket_uuid != case.object_uuid {
+        info!("Created new uuid for docket.")
     }
 
-    for filling in case.filings.iter() {
+    for petitioner in petitioner_list.iter_mut() {
+        upload_docket_petitioner_org_connection(petitioner, docket_uuid, pool).await?;
+    }
+
+    for party in case.case_parties.iter_mut() {
+        upload_docket_party_human_connection(party, docket_uuid, pool).await?;
+    }
+
+    for filling in case.filings.iter_mut() {
         let individual_author_strings = filling
             .individual_authors
             .iter()
-            .map(|s| s.human_name.to_string())
+            .map(|s| s.human_name.as_str())
             .collect::<Vec<_>>();
         let organization_author_strings = filling
             .organization_authors
             .iter()
-            .map(|s| s.truncated_org_name.to_string())
+            .map(|s| s.truncated_org_name.as_str())
             .collect::<Vec<_>>();
         let filling_uuid: Uuid = sqlx::query_scalar!(
             "INSERT INTO fillings (uuid, docket_uuid, docket_govid, individual_author_strings, organization_author_strings, filed_date, filling_type, filling_name, filling_description, openscrapers_id)
@@ -331,9 +338,13 @@ pub async fn ingest_sql_nypuc_case(
         )
         .fetch_one(pool)
         .await?;
+        if filling_uuid != filling.object_uuid {
+            info!(filling_uuid, "Set filling to have new uuid");
+            filling.object_uuid = filling_uuid;
+        }
 
         // Associate individual authors using the proper association functions
-        for mut individual_author in filling.individual_authors.iter().cloned() {
+        for mut individual_author in filling.individual_authors.iter_mut() {
             upload_filling_human_author(&mut individual_author, filling_uuid, pool).await?;
         }
 
@@ -342,13 +353,12 @@ pub async fn ingest_sql_nypuc_case(
             upload_filling_organization_author(&mut org_author, filling_uuid, pool).await?;
         }
 
-        for attachment in filling.attachments.iter() {
-            let hashstr = if let Some(hash) = attachment.hash {
-                hash.to_string()
-            } else {
-                "".to_string()
-            };
-            sqlx::query!(
+        for attachment in filling.attachments.iter_mut() {
+            let hashstr = attachment
+                .hash
+                .map(|h| h.to_string())
+                .unwrap_or_else(|| "".to_string());
+            let attachment_uuid: Uuid = sqlx::query_scalar!(
                 "INSERT INTO attachments (uuid, parent_filling_uuid, blake2b_hash, attachment_file_extension, attachment_file_name, attachment_title, attachment_url, openscrapers_id)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                     ON CONFLICT (uuid) DO UPDATE SET
@@ -359,7 +369,7 @@ pub async fn ingest_sql_nypuc_case(
                     attachment_title = EXCLUDED.attachment_title,
                     attachment_url = EXCLUDED.attachment_url,
                     openscrapers_id = EXCLUDED.openscrapers_id
-                    ",
+                    RETURNING uuid",
                 attachment.object_uuid,
                 filling_uuid,
                 hashstr,
@@ -368,8 +378,12 @@ pub async fn ingest_sql_nypuc_case(
                 &attachment.name,
                 &attachment.url,
                 &attachment.object_uuid.to_string()
-            ).execute(pool)
+            ).fetch_one(pool)
             .await?;
+            if attachment_uuid != attachment.object_uuid {
+                info!(attachment_uuid, "Set attachment to have new uuid");
+                attachment.object_uuid = attachment_uuid;
+            }
         }
     }
 
