@@ -5,7 +5,6 @@ use dokito_types::{
     attachments::RawAttachment,
     env_vars::{DIGITALOCEAN_S3, OPENSCRAPERS_S3_OBJECT_BUCKET},
 };
-use futures::StreamExt;
 use mycorrhiza_common::{
     hash::Blake2bHash,
     s3_generic::{

@@ -1,3 +1,5 @@
+result
+target
 .devenv
 k8s/templates/secrets.yaml
 

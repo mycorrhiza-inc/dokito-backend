@@ -131,8 +131,8 @@ pub async fn guess_at_organization_type(
     if org_info.org_type != OrganizationType::Unknown {
         return org_info.org_type;
     }
-    let reduced_name = org_info.truncated_org_name.as_str();
-    let suffix = org_info.org_suffix.as_str();
+    let _reduced_name = org_info.truncated_org_name.as_str();
+    let _suffix = org_info.org_suffix.as_str();
     // TODO: use a cheap llm to guess at the organization type from the total list of organization
     // types.
     // If it fails just return

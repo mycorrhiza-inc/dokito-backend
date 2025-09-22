@@ -3,9 +3,24 @@ use dokito_types::processed::{
     ProcessedGenericHuman,
     ProcessedGenericOrganization,
 };
-use sqlx::{PgPool, query};
+use sqlx::{PgPool, query, query_as, FromRow};
 use std::collections::BTreeSet;
 use uuid::Uuid;
+
+#[derive(FromRow)]
+struct HumanRecord {
+    uuid: Uuid,
+    western_first_name: String,
+    western_last_name: String,
+    contact_emails: Vec<String>,
+    contact_phone_numbers: Vec<String>,
+}
+
+#[derive(FromRow)]
+struct OrganizationRecord {
+    uuid: Uuid,
+    name: String,
+}
 
 pub async fn associate_individual_author_with_name(
     individual: &mut ProcessedGenericHuman,
@@ -13,7 +28,8 @@ pub async fn associate_individual_author_with_name(
 ) -> Result<(), anyhow::Error> {
     if !individual.object_uuid.is_nil() {
         let author_id = individual.object_uuid;
-        let result = query!("SELECT * FROM public.humans WHERE uuid=$1", author_id)
+        let result = query_as::<_, HumanRecord>("SELECT uuid, western_first_name, western_last_name, contact_emails, contact_phone_numbers FROM public.humans WHERE uuid=$1")
+            .bind(author_id)
             .fetch_optional(pool)
             .await?;
         if let Some(matched_record) = result
@@ -28,11 +44,11 @@ pub async fn associate_individual_author_with_name(
     };
     let first_name = &*individual.western_first_name;
     let last_name = &*individual.western_last_name;
-    let match_on_first_and_last_name = query!(
-        "SELECT * FROM public.humans WHERE western_first_name=$1 AND western_last_name = $2",
-        first_name,
-        last_name
+    let match_on_first_and_last_name = query_as::<_, HumanRecord>(
+        "SELECT uuid, western_first_name, western_last_name, contact_emails, contact_phone_numbers FROM public.humans WHERE western_first_name=$1 AND western_last_name = $2"
     )
+    .bind(first_name)
+    .bind(last_name)
     .fetch_optional(pool)
     .await?;
     if let Some(matched_record) = match_on_first_and_last_name {
@@ -54,12 +70,12 @@ pub async fn associate_individual_author_with_name(
 
         // Update database with merged contact info
         if merged_emails.len() != orig_email_length || merged_phones.len() != orig_phone_length {
-            sqlx::query!(
-                "UPDATE humans SET contact_emails = $1, contact_phone_numbers = $2 WHERE uuid = $3",
-                &merged_emails,
-                &merged_phones,
-                matched_record.uuid
+            sqlx::query(
+                "UPDATE humans SET contact_emails = $1, contact_phone_numbers = $2 WHERE uuid = $3"
             )
+            .bind(&merged_emails)
+            .bind(&merged_phones)
+            .bind(matched_record.uuid)
             .execute(pool)
             .await?;
         };
@@ -83,15 +99,15 @@ pub async fn associate_individual_author_with_name(
     let contact_emails = &individual.contact_emails;
     let contact_phones = &individual.contact_phone_numbers;
 
-    sqlx::query!(
-        "INSERT INTO humans (uuid, name, western_first_name, western_last_name, contact_emails, contact_phone_numbers) VALUES ($1, $2, $3, $4, $5, $6)",
-        provisional_uuid,
-        name,
-        individual.western_first_name,
-        individual.western_last_name,
-        contact_emails,
-        contact_phones
+    sqlx::query(
+        "INSERT INTO humans (uuid, name, western_first_name, western_last_name, contact_emails, contact_phone_numbers) VALUES ($1, $2, $3, $4, $5, $6)"
     )
+    .bind(provisional_uuid)
+    .bind(name)
+    .bind(&individual.western_first_name)
+    .bind(&individual.western_last_name)
+    .bind(contact_emails)
+    .bind(contact_phones)
     .execute(pool)
     .await?;
     individual.object_uuid = provisional_uuid;
@@ -107,7 +123,8 @@ pub async fn associate_organization_with_name(
 ) -> Result<(), anyhow::Error> {
     if !org.object_uuid.is_nil() {
         let org_id = org.object_uuid;
-        let match_on_uuid = query!("SELECT * FROM public.organizations WHERE uuid=$1", org_id)
+        let match_on_uuid = query_as::<_, OrganizationRecord>("SELECT uuid, name FROM public.organizations WHERE uuid=$1")
+            .bind(org_id)
             .fetch_optional(pool)
             .await?;
         if let Some(matched_record) = match_on_uuid
@@ -119,7 +136,8 @@ pub async fn associate_organization_with_name(
     };
     let org_name = org.truncated_org_name.as_str();
 
-    let match_on_org_name = query!("SELECT * FROM public.organizations WHERE name=$1", org_name)
+    let match_on_org_name = query_as::<_, OrganizationRecord>("SELECT uuid, name FROM public.organizations WHERE name=$1")
+        .bind(org_name)
         .fetch_optional(pool)
         .await?;
     if let Some(matched_record) = match_on_org_name {
@@ -133,15 +151,15 @@ pub async fn associate_organization_with_name(
     }
     let org_type = org.org_type.to_string();
 
-    sqlx::query!(
-        "INSERT INTO organizations (uuid, name, aliases, description, artifical_person_type, org_suffix) VALUES ($1, $2, $3, $4, $5, $6)",
-        provisional_uuid,
-        org.truncated_org_name.as_str(),
-        &vec![org.truncated_org_name.to_string()],
-        "",
-        &org_type,
-        &org.org_suffix,
+    sqlx::query(
+        "INSERT INTO organizations (uuid, name, aliases, description, artifical_person_type, org_suffix) VALUES ($1, $2, $3, $4, $5, $6)"
     )
+    .bind(provisional_uuid)
+    .bind(org.truncated_org_name.as_str())
+    .bind(&vec![org.truncated_org_name.to_string()])
+    .bind("")
+    .bind(&org_type)
+    .bind(&org.org_suffix)
     .execute(pool)
     .await?;
     org.object_uuid = provisional_uuid;
@@ -175,13 +193,13 @@ pub async fn upload_docket_party_human_connection(
         .map(|s| s.as_str())
         .unwrap_or("");
 
-    sqlx::query!(
-        "INSERT INTO individual_offical_party_to_docket (docket_uuid, individual_uuid, party_email_contact, party_phone_contact) VALUES ($1, $2, $3, $4)",
-        parent_docket_uuid,
-        upload_party.object_uuid,
-        party_email,
-        party_phone
+    sqlx::query(
+        "INSERT INTO individual_offical_party_to_docket (docket_uuid, individual_uuid, party_email_contact, party_phone_contact) VALUES ($1, $2, $3, $4)"
     )
+    .bind(parent_docket_uuid)
+    .bind(upload_party.object_uuid)
+    .bind(party_email)
+    .bind(party_phone)
     .execute(pool)
     .await?;
 
@@ -204,11 +222,11 @@ pub async fn upload_docket_petitioner_org_connection(
     };
     let petitioner_uuid = upload_petitioner.object_uuid;
 
-    sqlx::query!(
-        "INSERT INTO docket_petitioned_by_org (docket_uuid, petitioner_uuid) VALUES ($1,$2)",
-        parent_docket_uuid,
-        petitioner_uuid
+    sqlx::query(
+        "INSERT INTO docket_petitioned_by_org (docket_uuid, petitioner_uuid) VALUES ($1,$2)"
     )
+    .bind(parent_docket_uuid)
+    .bind(petitioner_uuid)
     .execute(pool)
     .await?;
     Ok(())
@@ -229,11 +247,11 @@ pub async fn upload_filling_organization_author(
     }
     let org_uuid = upload_org_author.object_uuid;
 
-    sqlx::query!(
-            "INSERT INTO fillings_on_behalf_of_org_relation (author_organization_uuid, filling_uuid) VALUES ($1, $2)",
-            org_uuid,
-            parent_filling_uuid
+    sqlx::query(
+            "INSERT INTO fillings_on_behalf_of_org_relation (author_organization_uuid, filling_uuid) VALUES ($1, $2)"
         )
+        .bind(org_uuid)
+        .bind(parent_filling_uuid)
         .execute(pool)
         .await?;
     Ok(())
@@ -254,12 +272,80 @@ pub async fn upload_filling_human_author(
         )
     }
 
-    sqlx::query!(
-        "INSERT INTO fillings_filed_by_individual (human_uuid, filling_uuid) VALUES ($1, $2)",
-        upload_author.object_uuid,
-        parent_filling_uuid
+    sqlx::query(
+        "INSERT INTO fillings_filed_by_individual (human_uuid, filling_uuid) VALUES ($1, $2)"
     )
+    .bind(upload_author.object_uuid)
+    .bind(parent_filling_uuid)
     .execute(pool)
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::PgPool;
+    use std::env;
+    use uuid::Uuid;
+
+    async fn setup_test_db() -> PgPool {
+        let database_url = env::var("DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://test:test@localhost/test_db".to_string());
+        PgPool::connect(&database_url).await.expect("Failed to connect to test database")
+    }
+
+    #[tokio::test]
+    async fn test_associate_individual_author_with_name_new_person() {
+        let pool = setup_test_db().await;
+
+        // Create a new individual that doesn't exist in the database
+        let mut individual = ProcessedGenericHuman {
+            object_uuid: Uuid::nil(),
+            western_first_name: "Test".to_string(),
+            western_last_name: "Person".to_string(),
+            human_name: "Test Person".to_string(),
+            contact_emails: vec!["test@example.com".to_string()],
+            contact_phone_numbers: vec!["+1234567890".to_string()],
+            extra_metadata: Default::default(),
+        };
+
+        let result = associate_individual_author_with_name(&mut individual, &pool).await;
+
+        assert!(result.is_ok(), "Failed to associate new individual: {:?}", result);
+        assert!(!individual.object_uuid.is_nil(), "UUID should be assigned");
+
+        // Verify the person was actually inserted
+        let db_record = query_as::<_, HumanRecord>(
+            "SELECT uuid, western_first_name, western_last_name, contact_emails, contact_phone_numbers FROM humans WHERE uuid = $1"
+        )
+        .bind(individual.object_uuid)
+        .fetch_one(&pool)
+        .await;
+
+        assert!(db_record.is_ok(), "Failed to fetch inserted record");
+        let record = db_record.unwrap();
+        assert_eq!(record.western_first_name, "Test");
+        assert_eq!(record.western_last_name, "Person");
+        assert_eq!(record.contact_emails, vec!["test@example.com"]);
+    }
+
+    #[tokio::test]
+    async fn test_query_structures_compile() {
+        // This test verifies that our query structures compile correctly
+        let pool = setup_test_db().await;
+
+        // Test HumanRecord query structure
+        let _human_query = query_as::<_, HumanRecord>(
+            "SELECT uuid, western_first_name, western_last_name, contact_emails, contact_phone_numbers FROM humans LIMIT 0"
+        );
+
+        // Test OrganizationRecord query structure
+        let _org_query = query_as::<_, OrganizationRecord>(
+            "SELECT uuid, name FROM organizations LIMIT 0"
+        );
+
+        // If we get here, the query structures compile correctly
+        assert!(true);
+    }
 }

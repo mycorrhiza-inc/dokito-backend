@@ -15,7 +15,7 @@ use rand::{SeedableRng, rngs::SmallRng, seq::SliceRandom};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
-use sqlx::{PgPool, Pool, Postgres, types::Uuid};
+use sqlx::{PgPool, Pool, Postgres, query_scalar, types::Uuid};
 
 use mycorrhiza_common::{
     s3_generic::cannonical_location::download_openscrapers_object, tasks::ExecuteUserTask,
@@ -139,8 +139,7 @@ async fn filter_out_existing_dokito_cases(
     pool: &PgPool,
     govid_list: &mut Vec<String>,
 ) -> anyhow::Result<()> {
-    let existing_db_govids = sqlx::query!("SELECT docket_govid FROM dockets")
-        .map(|r| r.docket_govid)
+    let existing_db_govids: Vec<String> = query_scalar("SELECT docket_govid FROM dockets")
         .fetch_all(pool)
         .await?;
 
@@ -215,15 +214,16 @@ pub async fn ingest_sql_case_with_retries(
             Err(err) => {
                 warn!(docket_govid=%case.case_govid, %remaining_tries,"Encountered error while processing docket, retrying.");
                 return_res = Err(err);
-                let existing_docket: Option<Uuid> = sqlx::query_scalar!(
-                    "SELECT uuid FROM dockets WHERE docket_govid = $1",
-                    &case.case_govid.as_str()
+                let existing_docket: Option<Uuid> = query_scalar(
+                    "SELECT uuid FROM dockets WHERE docket_govid = $1"
                 )
+                .bind(&case.case_govid.as_str())
                 .fetch_optional(pool)
                 .await?;
 
                 if let Some(docket_uuid) = existing_docket {
-                    sqlx::query!("DELETE FROM dockets WHERE uuid = $1", docket_uuid)
+                    sqlx::query("DELETE FROM dockets WHERE uuid = $1")
+                        .bind(docket_uuid)
                         .execute(pool)
                         .await?;
                     info!(%docket_uuid, %case.case_govid,"Successfully deleted corrupted case data");
@@ -258,7 +258,7 @@ pub async fn ingest_sql_nypuc_case(
     }
 
     // Upsert docket
-    let docket_uuid: Uuid = sqlx::query_scalar!(
+    let docket_uuid: Uuid = query_scalar(
         "INSERT INTO dockets (uuid, docket_govid, docket_description, docket_title, industry, hearing_officer, opened_date, closed_date, petitioner_strings, docket_type, docket_subtype )
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          ON CONFLICT (uuid) DO UPDATE SET
@@ -272,19 +272,19 @@ pub async fn ingest_sql_nypuc_case(
          petitioner_strings = EXCLUDED.petitioner_strings,
          docket_type = EXCLUDED.docket_type,
          docket_subtype = EXCLUDED.docket_subtype
-         RETURNING uuid",
-        case.object_uuid,
-        &case.case_govid.as_str(),
-        &case.description,
-        &case.case_name,
-        &case.industry,
-        &case.hearing_officer,
-        case.opened_date,
-        case.closed_date,
-        &petitioner_strings,
-        case_type,
-        case_subtype,
+         RETURNING uuid"
     )
+    .bind(case.object_uuid)
+    .bind(&case.case_govid.as_str())
+    .bind(&case.description)
+    .bind(&case.case_name)
+    .bind(&case.industry)
+    .bind(&case.hearing_officer)
+    .bind(case.opened_date)
+    .bind(case.closed_date)
+    .bind(&petitioner_strings)
+    .bind(case_type)
+    .bind(case_subtype)
     .fetch_one(pool)
     .await?;
     if docket_uuid != case.object_uuid {
@@ -310,7 +310,7 @@ pub async fn ingest_sql_nypuc_case(
             .iter()
             .map(|s| s.truncated_org_name.to_string())
             .collect::<Vec<_>>();
-        let filling_uuid: Uuid = sqlx::query_scalar!(
+        let filling_uuid: Uuid = query_scalar(
             "INSERT INTO fillings (uuid, docket_uuid, docket_govid, individual_author_strings, organization_author_strings, filed_date, filling_type, filling_name, filling_description, openscrapers_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
              ON CONFLICT (uuid) DO UPDATE SET
@@ -323,18 +323,18 @@ pub async fn ingest_sql_nypuc_case(
              filling_name = EXCLUDED.filling_name,
              filling_description = EXCLUDED.filling_description,
              openscrapers_id = EXCLUDED.openscrapers_id
-             RETURNING uuid",
-            filling.object_uuid,
-            docket_uuid,
-            &case.case_govid.as_str(),
-            &individual_author_strings,
-            &organization_author_strings,
-            filling.filed_date,
-            &filling.filing_type,
-            &filling.name,
-            &filling.description,
-            &filling.object_uuid.to_string()
+             RETURNING uuid"
         )
+        .bind(filling.object_uuid)
+        .bind(docket_uuid)
+        .bind(&case.case_govid.as_str())
+        .bind(&individual_author_strings)
+        .bind(&organization_author_strings)
+        .bind(filling.filed_date)
+        .bind(&filling.filing_type)
+        .bind(&filling.name)
+        .bind(&filling.description)
+        .bind(&filling.object_uuid.to_string())
         .fetch_one(pool)
         .await?;
         if filling_uuid != filling.object_uuid {
@@ -357,7 +357,7 @@ pub async fn ingest_sql_nypuc_case(
                 .hash
                 .map(|h| h.to_string())
                 .unwrap_or_else(|| "".to_string());
-            let attachment_uuid: Uuid = sqlx::query_scalar!(
+            let attachment_uuid: Uuid = query_scalar(
                 "INSERT INTO attachments (uuid, parent_filling_uuid, blake2b_hash, attachment_file_extension, attachment_file_name, attachment_title, attachment_url, openscrapers_id)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                     ON CONFLICT (uuid) DO UPDATE SET
@@ -368,16 +368,17 @@ pub async fn ingest_sql_nypuc_case(
                     attachment_title = EXCLUDED.attachment_title,
                     attachment_url = EXCLUDED.attachment_url,
                     openscrapers_id = EXCLUDED.openscrapers_id
-                    RETURNING uuid",
-                attachment.object_uuid,
-                filling_uuid,
-                hashstr,
-                &attachment.document_extension.to_string(),
-                &attachment.name,
-                &attachment.name,
-                &attachment.url,
-                &attachment.object_uuid.to_string()
-            ).fetch_one(pool)
+                    RETURNING uuid"
+            )
+            .bind(attachment.object_uuid)
+            .bind(filling_uuid)
+            .bind(hashstr)
+            .bind(&attachment.document_extension.to_string())
+            .bind(&attachment.name)
+            .bind(&attachment.name)
+            .bind(&attachment.url)
+            .bind(&attachment.object_uuid.to_string())
+            .fetch_one(pool)
             .await?;
             if attachment_uuid != attachment.object_uuid {
                 info!(%attachment_uuid, "Set attachment to have new uuid");
@@ -397,43 +398,43 @@ pub async fn delete_all_data(pool: &PgPool) -> anyhow::Result<()> {
     let mut tx = pool.begin().await?;
 
     // Disable statement timeout just for this transaction
-    sqlx::query!("SET LOCAL statement_timeout = 0;")
+    sqlx::query("SET LOCAL statement_timeout = 0;")
         .execute(&mut *tx)
         .await?;
     info!("Disabled statement_timeout for this transaction");
 
     // Drop relation tables first (with CASCADE)
     info!("Deleting from fillings_filed_by_org_relation");
-    sqlx::query!("TRUNCATE fillings_filed_by_org_relation CASCADE")
+    sqlx::query("TRUNCATE fillings_filed_by_org_relation CASCADE")
         .execute(&mut *tx)
         .await?;
 
     info!("Deleting from fillings_on_behalf_of_org_relation");
-    sqlx::query!("TRUNCATE fillings_on_behalf_of_org_relation CASCADE")
+    sqlx::query("TRUNCATE fillings_on_behalf_of_org_relation CASCADE")
         .execute(&mut *tx)
         .await?;
 
     // Attachments
     info!("Deleting from attachments");
-    sqlx::query!("TRUNCATE attachments CASCADE")
+    sqlx::query("TRUNCATE attachments CASCADE")
         .execute(&mut *tx)
         .await?;
 
     // Organizations
     info!("Deleting from organizations");
-    sqlx::query!("TRUNCATE organizations CASCADE")
+    sqlx::query("TRUNCATE organizations CASCADE")
         .execute(&mut *tx)
         .await?;
 
     // Fillings
     info!("Deleting from fillings");
-    sqlx::query!("TRUNCATE fillings CASCADE")
+    sqlx::query("TRUNCATE fillings CASCADE")
         .execute(&mut *tx)
         .await?;
 
     // Dockets
     info!("Deleting from dockets");
-    sqlx::query!("TRUNCATE dockets CASCADE")
+    sqlx::query("TRUNCATE dockets CASCADE")
         .execute(&mut *tx)
         .await?;
 
@@ -443,3 +444,6 @@ pub async fn delete_all_data(pool: &PgPool) -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;
