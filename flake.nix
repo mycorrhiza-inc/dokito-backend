@@ -18,10 +18,13 @@
       naersk' = pkgs.callPackage naersk {};
       nix2containerPkgs = nix2container.packages.${system};
 
-      # Build the Rust application
+      # Build the Rust application from repo root (handles workspace dependencies)
       dokito-backend = naersk'.buildPackage {
-        src = ./dokito_processing_monolith;
+        src = ./.;
         name = "dokito_processing_monolith";
+
+        # Build only the main binary, not the whole workspace
+        cargoBuildOptions = x: x ++ [ "--package" "dokito_processing_monolith" ];
 
         # Add any additional build inputs if needed
         nativeBuildInputs = with pkgs; [

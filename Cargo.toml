@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "dokito_processing_monolith",
+    "dokito_types"
+]
+
+resolver = "2"
