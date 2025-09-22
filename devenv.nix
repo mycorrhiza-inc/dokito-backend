@@ -6,10 +6,9 @@
   cachix.enable = false;
 
   # Common packages available to all projects
+  languages.rust.enable = true;
   packages = with pkgs; [
-    cargo
-    rustc
-    rust-analyzer
+    openssl
   ];
 
   env = {

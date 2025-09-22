@@ -10,7 +10,6 @@ use dokito_types::{
     raw::{RawDocketWithJurisdiction, RawGenericDocket},
 };
 use futures::future::join_all;
-use sqlx::postgres::PgPoolOptions;
 use tokio::sync::Semaphore;
 use tracing::info;
 

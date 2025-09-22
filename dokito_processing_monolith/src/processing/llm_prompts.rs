@@ -4,7 +4,6 @@ use non_empty_string::NonEmptyString;
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::types::processed::OrgName;
 
 pub async fn org_split_from_dump(org_dump: &str) -> anyhow::Result<Vec<String>> {
     let prompt = format!(

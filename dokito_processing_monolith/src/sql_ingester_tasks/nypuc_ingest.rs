@@ -1,22 +1,21 @@
-use std::{collections::HashSet, env, mem::take, sync::LazyLock};
+use std::{collections::HashSet, mem::take};
 
 use async_trait::async_trait;
 use dokito_types::{
     env_vars::DIGITALOCEAN_S3,
     jurisdictions::JurisdictionInfo,
-    processed::{OrgName, ProcessedGenericDocket, ProcessedGenericOrganization},
+    processed::{ProcessedGenericDocket, ProcessedGenericOrganization},
     raw::RawGenericDocket,
     s3_stuff::{
-        DocketAddress, list_processed_cases_for_jurisdiction, list_raw_cases_for_jurisdiction,
+        DocketAddress, list_raw_cases_for_jurisdiction,
     },
 };
 use futures::stream::{self, StreamExt};
 use rand::{SeedableRng, rngs::SmallRng, seq::SliceRandom};
-use reqwest::Client;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
-use sqlx::{PgPool, Pool, Postgres, postgres::PgPoolOptions, types::Uuid};
+use sqlx::{PgPool, Pool, Postgres, types::Uuid};
 
 use mycorrhiza_common::{
     s3_generic::cannonical_location::download_openscrapers_object, tasks::ExecuteUserTask,
@@ -110,7 +109,7 @@ pub async fn get_all_ny_puc_data(purge_data: bool) -> anyhow::Result<()> {
     info!(length=%original_caselist_length,"Got list of all cases");
 
     if ignore_existing {
-        let _ = filter_out_existing_dokito_cases(&pool, &mut case_govids).await;
+        let _ = filter_out_existing_dokito_cases(pool, &mut case_govids).await;
     }
 
     let mut rng = SmallRng::from_os_rng();
@@ -120,7 +119,7 @@ pub async fn get_all_ny_puc_data(purge_data: bool) -> anyhow::Result<()> {
     info!(total_cases = %original_caselist_length, cases_to_process= %cases_to_process_len,"Filtered down original raw cases to a subset that is not present in the database.");
 
     let execute_case_wraped =
-        async |case_id: String| ingest_wrapped_ny_data(&case_id, &pool, ignore_existing).await;
+        async |case_id: String| ingest_wrapped_ny_data(&case_id, pool, ignore_existing).await;
 
     // Create a stream of futures to fetch and ingest each case concurrently
     let futures_count = stream::iter(case_govids)
@@ -167,8 +166,8 @@ async fn get_processed_case_or_process_if_not_existing(
             let raw_case =
                 download_openscrapers_object::<RawGenericDocket>(&s3_client, case_address).await?;
             let extra_info = (s3_client, jurisdiction);
-            let final_res = process_case(raw_case, &extra_info).await;
-            final_res
+            
+            process_case(raw_case, &extra_info).await
         }
     };
     match docket {
@@ -345,7 +344,7 @@ pub async fn ingest_sql_nypuc_case(
 
         // Associate individual authors using the proper association functions
         for mut individual_author in filling.individual_authors.iter_mut() {
-            upload_filling_human_author(&mut individual_author, filling_uuid, pool).await?;
+            upload_filling_human_author(individual_author, filling_uuid, pool).await?;
         }
 
         // Associate organization authors using the proper association functions
@@ -381,7 +380,7 @@ pub async fn ingest_sql_nypuc_case(
             ).fetch_one(pool)
             .await?;
             if attachment_uuid != attachment.object_uuid {
-                info!(attachment_uuid, "Set attachment to have new uuid");
+                info!(%attachment_uuid, "Set attachment to have new uuid");
                 attachment.object_uuid = attachment_uuid;
             }
         }

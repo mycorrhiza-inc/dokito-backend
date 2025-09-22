@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
-use sqlx::{Executor, PgPool, migrate::Migrator, postgres::PgPoolOptions};
+use sqlx::{Executor, PgPool, migrate::Migrator};
 use tracing::info;
 
 use mycorrhiza_common::tasks::ExecuteUserTask;
@@ -49,7 +49,7 @@ pub async fn recreate_schema() -> anyhow::Result<()> {
     info!(%num_migrations,"Created sqlx migrator");
 
     info!("Dropping existing tables");
-    drop_existing_schema(&pool, &mut migrator).await?;
+    drop_existing_schema(pool, &mut migrator).await?;
 
     info!("Creating tables");
     // create_schema(&pool).await?;

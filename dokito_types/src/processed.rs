@@ -1,12 +1,10 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 
 use chrono::{DateTime, NaiveDate, Utc};
 use mycorrhiza_common::{file_extension::FileExtension, hash::Blake2bHash};
 use non_empty_string::NonEmptyString;
-use openscraper_types::raw::RawGenericParty;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_with::{DefaultOnError, serde_as};
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Hash)]

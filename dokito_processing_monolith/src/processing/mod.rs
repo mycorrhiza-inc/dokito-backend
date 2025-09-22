@@ -1,4 +1,3 @@
-use std::iter::Rev;
 
 use crate::data_processing_traits::{
     DownloadIncomplete, ProcessFrom, Revalidate, RevalidationOutcome,

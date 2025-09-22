@@ -1,6 +1,6 @@
 use anyhow::bail;
 use dokito_types::processed::{
-    ProcessedGenericDocket, ProcessedGenericFiling, ProcessedGenericHuman,
+    ProcessedGenericHuman,
     ProcessedGenericOrganization,
 };
 use sqlx::{PgPool, query};
@@ -167,13 +167,11 @@ pub async fn upload_docket_party_human_connection(
     }
 
     let party_email = upload_party
-        .contact_emails
-        .get(0)
+        .contact_emails.first()
         .map(|s| s.as_str())
         .unwrap_or("");
     let party_phone = upload_party
-        .contact_phone_numbers
-        .get(0)
+        .contact_phone_numbers.first()
         .map(|s| s.as_str())
         .unwrap_or("");
 

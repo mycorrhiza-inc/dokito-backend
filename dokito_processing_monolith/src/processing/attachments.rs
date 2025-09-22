@@ -7,7 +7,6 @@ use crate::s3_stuff::{
 };
 use crate::types::processed::ProcessedGenericAttachment;
 use crate::types::{attachments::RawAttachment, jurisdictions::JurisdictionInfo};
-use anyhow::anyhow;
 use aws_sdk_s3::Client as S3Client;
 use chrono::Utc;
 use mycorrhiza_common::file_extension::FileExtension;
@@ -16,7 +15,6 @@ use non_empty_string::{NonEmptyString, non_empty_string};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::iter::Rev;
 use std::str::FromStr;
 use std::time::Duration;
 use tokio::sync::Semaphore;

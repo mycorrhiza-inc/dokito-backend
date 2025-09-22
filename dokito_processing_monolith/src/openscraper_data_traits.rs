@@ -1,9 +1,7 @@
 use std::convert::Infallible;
 
 use chrono::{NaiveDate, Utc};
-use dokito_types::processed::{ProcessedArtificalPerson, ProcessedGenericHuman};
 use futures_util::{StreamExt, stream};
-use sqlx::PgPool;
 use tracing::warn;
 use uuid::Uuid;
 
@@ -283,7 +281,7 @@ impl ProcessFrom<RawGenericAttachment> for ProcessedGenericAttachment {
             attachment_type: input.attachment_type.clone(),
             attachment_subtype: input.attachment_subtype.clone(),
             url: input.url.clone(),
-            extra_metadata: input.extra_metadata.clone(),
+            extra_metadata: input.extra_metadata.clone().into_iter().collect(),
             hash,
         };
         Ok(return_res)
