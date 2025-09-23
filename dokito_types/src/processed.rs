@@ -74,6 +74,7 @@ pub struct ProcessedGenericHuman {
     pub western_last_name: String,
     pub contact_emails: Vec<String>,
     pub contact_phone_numbers: Vec<String>,
+    pub contact_addresses: Vec<String>,
     pub representing_company: Option<ProcessedGenericOrganization>,
     pub employed_by: Option<ProcessedGenericOrganization>,
     pub title: String,

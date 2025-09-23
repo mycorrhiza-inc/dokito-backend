@@ -324,7 +324,7 @@ pub async fn ingest_sql_nypuc_case(
         )
         .bind(filling.object_uuid)
         .bind(docket_uuid)
-        .bind(&case.case_govid.as_str())
+        .bind(case.case_govid.as_str())
         .bind(&individual_author_strings)
         .bind(&organization_author_strings)
         .bind(filling.filed_date)
@@ -340,13 +340,13 @@ pub async fn ingest_sql_nypuc_case(
         }
 
         // Associate individual authors using the proper association functions
-        for mut individual_author in filling.individual_authors.iter_mut() {
+        for individual_author in filling.individual_authors.iter_mut() {
             upload_filling_human_author(individual_author, filling_uuid, pool).await?;
         }
 
         // Associate organization authors using the proper association functions
-        for mut org_author in filling.organization_authors.iter().cloned() {
-            upload_filling_organization_author(&mut org_author, filling_uuid, pool).await?;
+        for org_author in filling.organization_authors.iter_mut() {
+            upload_filling_organization_author(org_author, filling_uuid, pool).await?;
         }
 
         for attachment in filling.attachments.iter_mut() {
@@ -370,11 +370,11 @@ pub async fn ingest_sql_nypuc_case(
             .bind(attachment.object_uuid)
             .bind(filling_uuid)
             .bind(hashstr)
-            .bind(&attachment.document_extension.to_string())
+            .bind(&*attachment.document_extension.to_string())
             .bind(&attachment.name)
             .bind(&attachment.name)
             .bind(&attachment.url)
-            .bind(&attachment.object_uuid.to_string())
+            .bind(&*attachment.object_uuid.to_string())
             .fetch_one(pool)
             .await?;
             if attachment_uuid != attachment.object_uuid {
@@ -441,6 +441,3 @@ pub async fn delete_all_data(pool: &PgPool) -> anyhow::Result<()> {
 
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

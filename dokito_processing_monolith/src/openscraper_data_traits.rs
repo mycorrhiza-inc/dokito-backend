@@ -1,8 +1,10 @@
 use std::convert::Infallible;
 
 use chrono::{NaiveDate, Utc};
+use dokito_types::processed::ProcessedGenericHuman;
 use dokito_types::raw::RawArtificalPersonType;
 use futures_util::{StreamExt, stream};
+use non_empty_string::NonEmptyString;
 use tracing::warn;
 use uuid::Uuid;
 
@@ -97,17 +99,6 @@ impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
         cached: Option<Self>,
         _: Self::ExtraData,
     ) -> Result<Self, Self::ParseError> {
-        let parties = input.case_parties;
-        let mut final_parties = vec![];
-        for rawparty in parties {
-            if rawparty.artifical_person_type != RawArtificalPersonType::Human {
-                let docket_govid = input.case_govid.as_str();
-                tracing::error!(
-                    docket_govid,
-                    "Support for adding non human case parties is not supported right now, go ahead and maybe try inputing it as a petitioner."
-                )
-            }
-        }
         let object_uuid = cached
             .as_ref()
             .map(|v| v.object_uuid)
@@ -153,10 +144,38 @@ impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
             .buffer_unordered(5)
             .collect::<Vec<_>>()
             .await;
+
+        let parties = input.case_parties;
+        let mut case_parties = vec![];
+        for rawparty in parties {
+            if rawparty.artifical_person_type != RawArtificalPersonType::Human
+                && let Ok(human_name) = NonEmptyString::try_from(rawparty.name)
+            {
+                let docket_govid = input.case_govid.as_str();
+                tracing::error!(
+                    docket_govid,
+                    "Support for adding non human case parties is not supported right now, go ahead and maybe try inputing it as a petitioner."
+                );
+                let processed_party_huamn = ProcessedGenericHuman {
+                    object_uuid: Uuid::nil(),
+                    human_name,
+                    western_first_name: rawparty.western_human_first_name,
+                    western_last_name: rawparty.western_human_last_name,
+                    contact_emails: vec![rawparty.contact_email],
+                    contact_phone_numbers: vec![rawparty.contact_phone],
+                    contact_addresses: vec![rawparty.contact_address],
+                    representing_company: None,
+                    employed_by: None,
+                    title: rawparty.human_title,
+                };
+                case_parties.push(processed_party_huamn)
+            }
+        }
         processed_fillings.sort_by_key(|v| v.index_in_docket);
         let llmed_petitioner_list = split_and_fix_organization_names_blob(&input.petitioner).await;
         let final_processed_docket = ProcessedGenericDocket {
             object_uuid,
+            case_parties,
             processed_at: Utc::now(),
             case_govid: input.case_govid.clone(),
             filings: processed_fillings,
@@ -168,7 +187,6 @@ impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
             case_subtype: input.case_subtype.clone(),
             indexed_at: input.indexed_at,
             closed_date: input.closed_date,
-            case_parties: vec![],
             description: input.description.clone(),
             // Super hacky workaround until I can change the input type.
             extra_metadata: input.extra_metadata.clone().into_iter().collect(),
