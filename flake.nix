@@ -93,11 +93,18 @@
         build-container = {
           type = "app";
           program = "${pkgs.writeShellScript "build-container" ''
+            set -euo pipefail
             echo "Building container..."
-            nix build .#container
+            if ! nix build .#container; then
+              echo "Container build failed!" >&2
+              exit 1
+            fi
             echo "Container built successfully!"
             echo "Loading into Docker..."
-            docker load < result
+            if ! docker load < result; then
+              echo "Failed to load container into Docker!" >&2
+              exit 1
+            fi
             echo "Container loaded into Docker as dokito-backend:latest"
           ''}";
         };

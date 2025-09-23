@@ -7,6 +7,7 @@
 
   # Common packages available to all projects
   languages.rust.enable = true;
+
   packages = with pkgs; [
     openssl
   ];
