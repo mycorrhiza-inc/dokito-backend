@@ -3,12 +3,12 @@ use std::collections::{BTreeMap, HashSet};
 use aws_sdk_s3::Client;
 use axum::Json;
 use chrono::{DateTime, NaiveDate, Utc};
-use sqlx::{query_as, FromRow};
 use futures_util::{StreamExt, stream};
 use mycorrhiza_common::tasks::ExecuteUserTask;
 use rand::{SeedableRng, rngs::SmallRng, seq::SliceRandom};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use sqlx::{FromRow, query_as};
 use tracing::info;
 
 use crate::{
@@ -92,9 +92,10 @@ async fn get_initial_govid_list_to_process(
 
 pub async fn download_dokito_cases_with_dates() -> anyhow::Result<BTreeMap<NaiveDate, String>> {
     let pool = get_dokito_pool()?;
-    let results = query_as::<_, DocketResult>("SELECT docket_govid, opened_date FROM public.dockets")
-        .fetch_all(pool)
-        .await?;
+    let results =
+        query_as::<_, DocketResult>("SELECT docket_govid, opened_date FROM public.dockets")
+            .fetch_all(pool)
+            .await?;
     let bmap = results
         .into_iter()
         .map(|val| (val.opened_date, val.docket_govid))
@@ -162,6 +163,3 @@ pub async fn download_attachments_from_docids(
         .await;
     info!(dockets_downloaded = %_tasks.len(),"Finished downloading attachments");
 }
-
-#[cfg(test)]
-mod tests;
