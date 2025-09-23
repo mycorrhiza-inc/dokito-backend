@@ -40,15 +40,22 @@
         PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
       };
 
-      # Create the OCI container
-      container = nix2containerPkgs.nix2container.buildImage {
+      # Create the OCI container using dockerTools instead
+      container = pkgs.dockerTools.buildImage {
         name = "dokito-backend";
         tag = "latest";
 
-        copyToRoot = [ dokito-backend ];
+        copyToRoot = pkgs.buildEnv {
+          name = "image-root";
+          paths = [ dokito-backend pkgs.coreutils pkgs.bash ];
+          pathsToLink = [ "/bin" ];
+        };
 
         config = {
           Cmd = [ "${dokito-backend}/bin/dokito_processing_monolith" ];
+          Env = [
+            "PATH=/bin"
+          ];
         };
       };
 
@@ -85,12 +92,14 @@
 
         build-container = {
           type = "app";
-          program = pkgs.writeShellScript "build-container" ''
+          program = "${pkgs.writeShellScript "build-container" ''
             echo "Building container..."
             nix build .#container
             echo "Container built successfully!"
-            echo "Load with: docker load < result"
-          '';
+            echo "Loading into Docker..."
+            docker load < result
+            echo "Container loaded into Docker as dokito-backend:latest"
+          ''}";
         };
       };
     };
