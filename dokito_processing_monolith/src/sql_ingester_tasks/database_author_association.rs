@@ -1,9 +1,6 @@
 use anyhow::bail;
-use dokito_types::processed::{
-    ProcessedGenericHuman,
-    ProcessedGenericOrganization,
-};
-use sqlx::{PgPool, query, query_as, FromRow};
+use dokito_types::processed::{ProcessedGenericHuman, ProcessedGenericOrganization};
+use sqlx::{FromRow, PgPool, query, query_as};
 use std::collections::BTreeSet;
 use uuid::Uuid;
 
@@ -71,7 +68,7 @@ pub async fn associate_individual_author_with_name(
         // Update database with merged contact info
         if merged_emails.len() != orig_email_length || merged_phones.len() != orig_phone_length {
             sqlx::query(
-                "UPDATE humans SET contact_emails = $1, contact_phone_numbers = $2 WHERE uuid = $3"
+                "UPDATE humans SET contact_emails = $1, contact_phone_numbers = $2 WHERE uuid = $3",
             )
             .bind(&merged_emails)
             .bind(&merged_phones)
@@ -123,10 +120,12 @@ pub async fn associate_organization_with_name(
 ) -> Result<(), anyhow::Error> {
     if !org.object_uuid.is_nil() {
         let org_id = org.object_uuid;
-        let match_on_uuid = query_as::<_, OrganizationRecord>("SELECT uuid, name FROM public.organizations WHERE uuid=$1")
-            .bind(org_id)
-            .fetch_optional(pool)
-            .await?;
+        let match_on_uuid = query_as::<_, OrganizationRecord>(
+            "SELECT uuid, name FROM public.organizations WHERE uuid=$1",
+        )
+        .bind(org_id)
+        .fetch_optional(pool)
+        .await?;
         if let Some(matched_record) = match_on_uuid
             && matched_record.name == org.truncated_org_name
         {
@@ -136,10 +135,12 @@ pub async fn associate_organization_with_name(
     };
     let org_name = org.truncated_org_name.as_str();
 
-    let match_on_org_name = query_as::<_, OrganizationRecord>("SELECT uuid, name FROM public.organizations WHERE name=$1")
-        .bind(org_name)
-        .fetch_optional(pool)
-        .await?;
+    let match_on_org_name = query_as::<_, OrganizationRecord>(
+        "SELECT uuid, name FROM public.organizations WHERE name=$1",
+    )
+    .bind(org_name)
+    .fetch_optional(pool)
+    .await?;
     if let Some(matched_record) = match_on_org_name {
         org.object_uuid = matched_record.uuid;
         return Ok(());
@@ -156,7 +157,7 @@ pub async fn associate_organization_with_name(
     )
     .bind(provisional_uuid)
     .bind(org.truncated_org_name.as_str())
-    .bind(&vec![org.truncated_org_name.to_string()])
+    .bind(vec![org.truncated_org_name.to_string()])
     .bind("")
     .bind(&org_type)
     .bind(&org.org_suffix)
@@ -185,11 +186,13 @@ pub async fn upload_docket_party_human_connection(
     }
 
     let party_email = upload_party
-        .contact_emails.first()
+        .contact_emails
+        .first()
         .map(|s| s.as_str())
         .unwrap_or("");
     let party_phone = upload_party
-        .contact_phone_numbers.first()
+        .contact_phone_numbers
+        .first()
         .map(|s| s.as_str())
         .unwrap_or("");
 
@@ -223,7 +226,7 @@ pub async fn upload_docket_petitioner_org_connection(
     let petitioner_uuid = upload_petitioner.object_uuid;
 
     sqlx::query(
-        "INSERT INTO docket_petitioned_by_org (docket_uuid, petitioner_uuid) VALUES ($1,$2)"
+        "INSERT INTO docket_petitioned_by_org (docket_uuid, petitioner_uuid) VALUES ($1,$2)",
     )
     .bind(parent_docket_uuid)
     .bind(petitioner_uuid)
@@ -273,7 +276,7 @@ pub async fn upload_filling_human_author(
     }
 
     sqlx::query(
-        "INSERT INTO fillings_filed_by_individual (human_uuid, filling_uuid) VALUES ($1, $2)"
+        "INSERT INTO fillings_filed_by_individual (human_uuid, filling_uuid) VALUES ($1, $2)",
     )
     .bind(upload_author.object_uuid)
     .bind(parent_filling_uuid)
@@ -292,7 +295,9 @@ mod tests {
     async fn setup_test_db() -> PgPool {
         let database_url = env::var("DATABASE_URL")
             .unwrap_or_else(|_| "postgres://test:test@localhost/test_db".to_string());
-        PgPool::connect(&database_url).await.expect("Failed to connect to test database")
+        PgPool::connect(&database_url)
+            .await
+            .expect("Failed to connect to test database")
     }
 
     #[tokio::test]
@@ -312,7 +317,11 @@ mod tests {
 
         let result = associate_individual_author_with_name(&mut individual, &pool).await;
 
-        assert!(result.is_ok(), "Failed to associate new individual: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Failed to associate new individual: {:?}",
+            result
+        );
         assert!(!individual.object_uuid.is_nil(), "UUID should be assigned");
 
         // Verify the person was actually inserted
@@ -337,13 +346,12 @@ mod tests {
 
         // Test HumanRecord query structure
         let _human_query = query_as::<_, HumanRecord>(
-            "SELECT uuid, western_first_name, western_last_name, contact_emails, contact_phone_numbers FROM humans LIMIT 0"
+            "SELECT uuid, western_first_name, western_last_name, contact_emails, contact_phone_numbers FROM humans LIMIT 0",
         );
 
         // Test OrganizationRecord query structure
-        let _org_query = query_as::<_, OrganizationRecord>(
-            "SELECT uuid, name FROM organizations LIMIT 0"
-        );
+        let _org_query =
+            query_as::<_, OrganizationRecord>("SELECT uuid, name FROM organizations LIMIT 0");
 
         // If we get here, the query structures compile correctly
         assert!(true);

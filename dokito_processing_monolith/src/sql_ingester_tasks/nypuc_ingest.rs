@@ -6,9 +6,7 @@ use dokito_types::{
     jurisdictions::JurisdictionInfo,
     processed::{ProcessedGenericDocket, ProcessedGenericOrganization},
     raw::RawGenericDocket,
-    s3_stuff::{
-        DocketAddress, list_raw_cases_for_jurisdiction,
-    },
+    s3_stuff::{DocketAddress, list_raw_cases_for_jurisdiction},
 };
 use futures::stream::{self, StreamExt};
 use rand::{SeedableRng, rngs::SmallRng, seq::SliceRandom};
@@ -165,7 +163,7 @@ async fn get_processed_case_or_process_if_not_existing(
             let raw_case =
                 download_openscrapers_object::<RawGenericDocket>(&s3_client, case_address).await?;
             let extra_info = (s3_client, jurisdiction);
-            
+
             process_case(raw_case, &extra_info).await
         }
     };
@@ -214,12 +212,11 @@ pub async fn ingest_sql_case_with_retries(
             Err(err) => {
                 warn!(docket_govid=%case.case_govid, %remaining_tries,"Encountered error while processing docket, retrying.");
                 return_res = Err(err);
-                let existing_docket: Option<Uuid> = query_scalar(
-                    "SELECT uuid FROM dockets WHERE docket_govid = $1"
-                )
-                .bind(&case.case_govid.as_str())
-                .fetch_optional(pool)
-                .await?;
+                let existing_docket: Option<Uuid> =
+                    query_scalar("SELECT uuid FROM dockets WHERE docket_govid = $1")
+                        .bind(&case.case_govid.as_str())
+                        .fetch_optional(pool)
+                        .await?;
 
                 if let Some(docket_uuid) = existing_docket {
                     sqlx::query("DELETE FROM dockets WHERE uuid = $1")
@@ -275,7 +272,7 @@ pub async fn ingest_sql_nypuc_case(
          RETURNING uuid"
     )
     .bind(case.object_uuid)
-    .bind(&case.case_govid.as_str())
+    .bind(case.case_govid.as_str())
     .bind(&case.description)
     .bind(&case.case_name)
     .bind(&case.industry)

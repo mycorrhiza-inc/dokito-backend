@@ -1,6 +1,7 @@
 use std::convert::Infallible;
 
 use chrono::{NaiveDate, Utc};
+use dokito_types::raw::RawArtificalPersonType;
 use futures_util::{StreamExt, stream};
 use tracing::warn;
 use uuid::Uuid;
@@ -96,6 +97,17 @@ impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
         cached: Option<Self>,
         _: Self::ExtraData,
     ) -> Result<Self, Self::ParseError> {
+        let parties = input.case_parties;
+        let mut final_parties = vec![];
+        for rawparty in parties {
+            if rawparty.artifical_person_type != RawArtificalPersonType::Human {
+                let docket_govid = input.case_govid.as_str();
+                tracing::error!(
+                    docket_govid,
+                    "Support for adding non human case parties is not supported right now, go ahead and maybe try inputing it as a petitioner."
+                )
+            }
+        }
         let object_uuid = cached
             .as_ref()
             .map(|v| v.object_uuid)
