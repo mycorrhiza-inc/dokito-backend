@@ -13,101 +13,140 @@
 
   outputs = { self, nixpkgs, naersk, nix2container }:
     let
-      system = "x86_64-linux";
-      pkgs = nixpkgs.legacyPackages.${system};
-      naersk' = pkgs.callPackage naersk {};
-      nix2containerPkgs = nix2container.packages.${system};
+      # Support multiple host systems
+      hostSystems = [ "x86_64-linux" "aarch64-darwin" "x86_64-darwin" ];
+      # Always target x86_64-linux for containers
+      targetSystem = "x86_64-linux";
 
-      # Build the Rust application from repo root (handles workspace dependencies)
-      dokito-backend = naersk'.buildPackage {
-        src = ./.;
-        name = "dokito_processing_monolith";
+      # Generate packages for each host system
+      forAllSystems = nixpkgs.lib.genAttrs hostSystems;
 
-        # Build only the main binary, not the whole workspace
-        cargoBuildOptions = x: x ++ [ "--package" "dokito_processing_monolith" ];
+      # Get packages for cross-compilation
+      getPkgs = hostSystem:
+        if hostSystem == targetSystem then
+          # Native compilation
+          nixpkgs.legacyPackages.${hostSystem}
+        else
+          # Cross-compilation
+          import nixpkgs {
+            system = hostSystem;
+            crossSystem = { system = targetSystem; };
+          };
 
-        # Add any additional build inputs if needed
-        nativeBuildInputs = with pkgs; [
-          pkg-config
-        ];
+      # Build function that works for any system
+      mkDokitoBackend = hostSystem:
+        let
+          pkgs = getPkgs hostSystem;
+          naersk' = pkgs.callPackage naersk {};
+        in
+        naersk'.buildPackage {
+          src = ./.;
+          name = "dokito_processing_monolith";
 
-        buildInputs = with pkgs; [
-          openssl
-        ];
+          # Build only the main binary, not the whole workspace
+          cargoBuildOptions = x: x ++ [ "--package" "dokito_processing_monolith" ];
 
-        # Set environment variables for OpenSSL
-        OPENSSL_NO_VENDOR = 1;
-        PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
-      };
-
-      # Create the OCI container using dockerTools instead
-      container = pkgs.dockerTools.buildImage {
-        name = "dokito-backend";
-        tag = "latest";
-
-        copyToRoot = pkgs.buildEnv {
-          name = "image-root";
-          paths = [ dokito-backend pkgs.coreutils pkgs.bash ];
-          pathsToLink = [ "/bin" ];
-        };
-
-        config = {
-          Cmd = [ "${dokito-backend}/bin/dokito_processing_monolith" ];
-          Env = [
-            "PATH=/bin"
+          # Add any additional build inputs if needed
+          nativeBuildInputs = with pkgs; [
+            pkg-config
           ];
+
+          buildInputs = with pkgs; [
+            openssl
+          ];
+
+          # Set environment variables for OpenSSL
+          OPENSSL_NO_VENDOR = 1;
+          PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
         };
-      };
+
+      # Container function (always built for x86_64-linux)
+      mkContainer = hostSystem:
+        let
+          pkgs = getPkgs hostSystem;
+          dokito-backend = mkDokitoBackend hostSystem;
+        in
+        pkgs.dockerTools.buildImage {
+          name = "dokito-backend";
+          tag = "latest";
+
+          copyToRoot = pkgs.buildEnv {
+            name = "image-root";
+            paths = [ dokito-backend pkgs.coreutils pkgs.bash ];
+            pathsToLink = [ "/bin" ];
+          };
+
+          config = {
+            Cmd = [ "${dokito-backend}/bin/dokito_processing_monolith" ];
+            Env = [
+              "PATH=/bin"
+            ];
+          };
+        };
 
     in {
-      packages.${system} = {
-        default = dokito-backend;
-        dokito-backend = dokito-backend;
-        container = container;
-      };
+      packages = forAllSystems (system:
+        let
+          dokito-backend = mkDokitoBackend system;
+          container = mkContainer system;
+        in {
+          default = dokito-backend;
+          dokito-backend = dokito-backend;
+          container = container;
+        });
 
-      # Development shell
-      devShells.${system}.default = pkgs.mkShell {
-        nativeBuildInputs = with pkgs; [
-          cargo
-          rustc
-          rust-analyzer
-          pkg-config
-        ];
+      # Development shell (use native tools for development)
+      devShells = forAllSystems (system:
+        let
+          # Use native packages for development shell
+          pkgs = nixpkgs.legacyPackages.${system};
+        in {
+          default = pkgs.mkShell {
+            nativeBuildInputs = with pkgs; [
+              cargo
+              rustc
+              rust-analyzer
+              pkg-config
+            ];
 
-        buildInputs = with pkgs; [
-          openssl
-        ];
+            buildInputs = with pkgs; [
+              openssl
+            ];
 
-        OPENSSL_NO_VENDOR = 1;
-        PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
-      };
+            OPENSSL_NO_VENDOR = 1;
+            PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
+          };
+        });
 
       # Apps for easy running
-      apps.${system} = {
-        default = {
-          type = "app";
-          program = "${dokito-backend}/bin/dokito_processing_monolith";
-        };
+      apps = forAllSystems (system:
+        let
+          pkgs = getPkgs system;
+          dokito-backend = mkDokitoBackend system;
+        in {
+          default = {
+            type = "app";
+            program = "${dokito-backend}/bin/dokito_processing_monolith";
+          };
 
-        build-container = {
-          type = "app";
-          program = "${pkgs.writeShellScript "build-container" ''
-            set -euo pipefail
-            echo "Building container..."
-            if ! nix build .#container; then
-              echo "Container build failed!" >&2
-              exit 1
-            fi
-            echo "Container built successfully!"
-            echo "Loading into Docker..."
-            if ! docker load < result; then
-              echo "Failed to load container into Docker!" >&2
-              exit 1
-            fi
-            echo "Container loaded into Docker as dokito-backend:latest"
-          ''}";
-        };
-      };
+          build-container = {
+            type = "app";
+            program = "${pkgs.writeShellScript "build-container" ''
+              set -euo pipefail
+              echo "Building container for x86_64-linux..."
+              if ! nix build .#container; then
+                echo "Container build failed!" >&2
+                exit 1
+              fi
+              echo "Container built successfully!"
+              echo "Loading into Docker..."
+              if ! docker load < result; then
+                echo "Failed to load container into Docker!" >&2
+                exit 1
+              fi
+              echo "Container loaded into Docker as dokito-backend:latest"
+            ''}";
+          };
+        });
     };
 }
