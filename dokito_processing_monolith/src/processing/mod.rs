@@ -1,7 +1,7 @@
-
 use crate::data_processing_traits::{
     DownloadIncomplete, ProcessFrom, Revalidate, RevalidationOutcome,
 };
+use crate::jurisdiction_schema_mapping::FixedJurisdiction;
 use crate::processing::attachments::OpenscrapersExtraData;
 use crate::s3_stuff::{DocketAddress, download_openscrapers_object, make_s3_client, upload_object};
 use crate::types::jurisdictions::JurisdictionInfo;
@@ -57,15 +57,17 @@ impl DownloadIncomplete for ProcessedGenericDocket {
     type ExtraData = OpenscrapersExtraData;
     async fn download_incomplete(
         &mut self,
-        extra: &Self::ExtraData,
+        extra: Self::ExtraData,
     ) -> anyhow::Result<RevalidationOutcome> {
         let _ = self.revalidate().await;
-        // info!(govid=%self.case_govid, jurisdiction=%extra.1.jurisdiction, opened_date = %self.opened_date, uuid = %self.object_uuid,"Attempting to download attachments for docket");
+        // info!(govid=%self.case_govid, jurisdiction=%extra.jurisdiction_info.jurisdiction, opened_date = %self.opened_date, uuid = %self.object_uuid,"Attempting to download attachments for docket");
         let attachment_refs = make_reflist_of_attachments_without_hash(self);
-        let wraped_download = async |val: &mut ProcessedGenericAttachment| {
-            DownloadIncomplete::download_incomplete(val, extra).await
-        };
-        let futures_stream = stream::iter(attachment_refs.into_iter().map(wraped_download));
+        let futures_stream = stream::iter(attachment_refs.into_iter().map(|val| {
+            let extra_clone = extra.clone();
+            async move {
+                DownloadIncomplete::download_incomplete(val, extra_clone).await
+            }
+        }));
         const CONCURRENT_ATTACHMENTS: usize = 10;
         let change_results = futures_stream
             .buffer_unordered(CONCURRENT_ATTACHMENTS)
@@ -78,7 +80,7 @@ impl DownloadIncomplete for ProcessedGenericDocket {
                 _ => 0,
             })
             .sum();
-        info!(govid=%self.case_govid, jurisdiction=%extra.1.jurisdiction, opened_date = %self.opened_date, uuid = %self.object_uuid, attachments_downloaded = %total_change_count,"Successfully downloaded all attachments for docket");
+        info!(govid=%self.case_govid, jurisdiction=%extra.jurisdiction_info.jurisdiction, opened_date = %self.opened_date, uuid = %self.object_uuid, attachments_downloaded = %total_change_count,"Successfully downloaded all attachments for docket");
         let did_docket_change = match total_change_count {
             0 => RevalidationOutcome::NoChanges,
             _ => RevalidationOutcome::DidChange,
@@ -89,9 +91,10 @@ impl DownloadIncomplete for ProcessedGenericDocket {
 
 pub async fn process_case(
     raw_case: RawGenericDocket,
-    extra_data: &OpenscrapersExtraData,
+    extra_data: OpenscrapersExtraData,
 ) -> anyhow::Result<ProcessedGenericDocket> {
-    let (s3_client, jur_info) = extra_data;
+    let s3_client = &extra_data.s3_client;
+    let jur_info = &extra_data.jurisdiction_info;
     tracing::info!(
         case_num=%raw_case.case_govid,
         state=%jur_info.state,
@@ -118,7 +121,7 @@ pub async fn process_case(
             .ok();
 
     let mut processed_case =
-        ProcessedGenericDocket::process_from(raw_case, processed_case_cache, ()).await?;
+        ProcessedGenericDocket::process_from(raw_case, processed_case_cache, extra_data.fixed_jurisdiction).await?;
     let _outcome = processed_case.revalidate().await;
 
     upload_object(s3_client, &docket_address, &processed_case).await?;
@@ -143,6 +146,12 @@ pub struct ReprocessDocketInfo {
 #[async_trait]
 impl ExecuteUserTask for ReprocessDocketInfo {
     async fn execute_task(self: Box<Self>) -> Result<serde_json::Value, serde_json::Value> {
+        let Ok(fixed_jurisdiction) = FixedJurisdiction::try_from(&self.jurisdiction) else {
+            return Err(serde_json::Value::String(
+                "Jurisdiction did not match one that is stored in the database, aborting."
+                    .to_string(),
+            ));
+        };
         // let self = *self;
         let s3_client = make_s3_client().await;
         let docket_address = DocketAddress {
@@ -168,7 +177,7 @@ impl ExecuteUserTask for ReprocessDocketInfo {
             return Ok("Found cached case, skipping".into());
         };
         let Ok(processed_case) =
-            ProcessedGenericDocket::process_from(raw_case, cached_docket, ()).await;
+            ProcessedGenericDocket::process_from(raw_case, cached_docket, fixed_jurisdiction).await;
         tracing::info!(docket_govid=%processed_case.case_govid,"Successfully processed case");
         let upload_res = upload_object(&s3_client, &docket_address, &processed_case).await;
         map_err_as_json(upload_res)?;

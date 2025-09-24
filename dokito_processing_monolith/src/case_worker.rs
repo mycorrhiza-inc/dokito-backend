@@ -1,4 +1,5 @@
-use crate::processing::process_case;
+use crate::jurisdiction_schema_mapping::FixedJurisdiction;
+use crate::processing::{attachments::OpenscrapersExtraData, process_case};
 use crate::s3_stuff::make_s3_client;
 use async_trait::async_trait;
 use dokito_types::raw::RawDocketWithJurisdiction;
@@ -15,8 +16,13 @@ impl ExecuteUserTask for ProcessCaseWithoutDownload {
             docket,
             jurisdiction,
         } = self.0;
-        let extra_data = (s3_client, jurisdiction);
-        let res = process_case(docket, &extra_data).await;
+        let fixed_jurisdiction = FixedJurisdiction::try_from(&jurisdiction).unwrap();
+        let extra_data = OpenscrapersExtraData {
+            s3_client,
+            jurisdiction_info: jurisdiction,
+            fixed_jurisdiction,
+        };
+        let res = process_case(docket, extra_data).await;
         match res {
             Ok(proc_docket) => Ok(serde_json::to_value(proc_docket)
                 .unwrap_or("Processed Case but could not serialize".into())),

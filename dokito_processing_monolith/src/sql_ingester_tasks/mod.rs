@@ -1,11 +1,11 @@
 use std::convert::identity;
 
 use aide::axum::ApiRouter;
-use mycorrhiza_common::tasks::routing::declare_default_task_route;
-use nypuc_ingest::NyPucIngestPurgePrevious;
+use mycorrhiza_common::tasks::routing::{declare_default_task_route, declare_task_route};
+use nypuc_ingest::FixedJurisdictionPurgePrevious;
 
 use crate::sql_ingester_tasks::{
-    initialize_config::InitializeConfig, nypuc_ingest::NyPucIngestGetMissingDockets,
+    initialize_config::InitializeConfig, nypuc_ingest::GetMissingDocketsForFixedJurisdiction,
     recreate_dokito_table_schema::RecreateDokitoTableSchema,
 };
 
@@ -16,8 +16,8 @@ pub mod nypuc_ingest;
 pub mod recreate_dokito_table_schema;
 
 pub fn add_sql_ingest_task_routes(router: ApiRouter) -> ApiRouter {
-    let router = declare_default_task_route::<NyPucIngestPurgePrevious>(router);
-    let router = declare_default_task_route::<NyPucIngestGetMissingDockets>(router);
+    let router = declare_task_route::<FixedJurisdictionPurgePrevious>(router);
+    let router = declare_task_route::<GetMissingDocketsForFixedJurisdiction>(router);
     let router = declare_default_task_route::<InitializeConfig>(router);
     let router = declare_default_task_route::<RecreateDokitoTableSchema>(router);
 

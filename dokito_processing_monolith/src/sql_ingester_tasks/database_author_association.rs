@@ -1,9 +1,10 @@
 use anyhow::bail;
 use dokito_types::processed::{ProcessedGenericHuman, ProcessedGenericOrganization};
-use non_empty_string::non_empty_string;
-use sqlx::{FromRow, PgPool, query, query_as};
+use sqlx::{FromRow, PgPool, query_as};
 use std::collections::BTreeSet;
 use uuid::Uuid;
+
+use crate::jurisdiction_schema_mapping::FixedJurisdiction;
 
 #[derive(FromRow)]
 struct HumanRecord {
@@ -22,11 +23,13 @@ struct OrganizationRecord {
 
 pub async fn associate_individual_author_with_name(
     individual: &mut ProcessedGenericHuman,
+    fixed_jur: FixedJurisdiction,
     pool: &PgPool,
 ) -> Result<(), anyhow::Error> {
+    let pg_schema = fixed_jur.get_postgres_schema_name();
     if !individual.object_uuid.is_nil() {
         let author_id = individual.object_uuid;
-        let result = query_as::<_, HumanRecord>("SELECT uuid, western_first_name, western_last_name, contact_emails, contact_phone_numbers FROM public.humans WHERE uuid=$1")
+        let result = query_as::<_, HumanRecord>(&format!("SELECT uuid, western_first_name, western_last_name, contact_emails, contact_phone_numbers FROM {pg_schema}.humans WHERE uuid=$1"))
             .bind(author_id)
             .fetch_optional(pool)
             .await?;
@@ -43,7 +46,7 @@ pub async fn associate_individual_author_with_name(
     let first_name = &*individual.western_first_name;
     let last_name = &*individual.western_last_name;
     let match_on_first_and_last_name = query_as::<_, HumanRecord>(
-        "SELECT uuid, western_first_name, western_last_name, contact_emails, contact_phone_numbers FROM public.humans WHERE western_first_name=$1 AND western_last_name = $2"
+        &format!("SELECT uuid, western_first_name, western_last_name, contact_emails, contact_phone_numbers FROM {pg_schema}.humans WHERE western_first_name=$1 AND western_last_name = $2")
     )
     .bind(first_name)
     .bind(last_name)
@@ -68,9 +71,9 @@ pub async fn associate_individual_author_with_name(
 
         // Update database with merged contact info
         if merged_emails.len() != orig_email_length || merged_phones.len() != orig_phone_length {
-            sqlx::query(
-                "UPDATE humans SET contact_emails = $1, contact_phone_numbers = $2 WHERE uuid = $3",
-            )
+            sqlx::query(&format!(
+                "UPDATE {pg_schema}.humans SET contact_emails = $1, contact_phone_numbers = $2 WHERE uuid = $3"
+            ))
             .bind(&merged_emails)
             .bind(&merged_phones)
             .bind(matched_record.uuid)
@@ -97,9 +100,9 @@ pub async fn associate_individual_author_with_name(
     let contact_emails = &individual.contact_emails;
     let contact_phones = &individual.contact_phone_numbers;
 
-    sqlx::query(
-        "INSERT INTO humans (uuid, name, western_first_name, western_last_name, contact_emails, contact_phone_numbers) VALUES ($1, $2, $3, $4, $5, $6)"
-    )
+    sqlx::query(&format!(
+        "INSERT INTO {pg_schema}.humans (uuid, name, western_first_name, western_last_name, contact_emails, contact_phone_numbers) VALUES ($1, $2, $3, $4, $5, $6)"
+    ))
     .bind(provisional_uuid)
     .bind(name)
     .bind(&individual.western_first_name)
@@ -117,13 +120,13 @@ pub async fn associate_individual_author_with_name(
 
 pub async fn associate_organization_with_name(
     org: &mut ProcessedGenericOrganization,
+    fixed_jur: FixedJurisdiction,
     pool: &PgPool,
 ) -> Result<(), anyhow::Error> {
+    let pg_schema = fixed_jur.get_postgres_schema_name();
     if !org.object_uuid.is_nil() {
         let org_id = org.object_uuid;
-        let match_on_uuid = query_as::<_, OrganizationRecord>(
-            "SELECT uuid, name FROM public.organizations WHERE uuid=$1",
-        )
+        let match_on_uuid = query_as::<_, OrganizationRecord>(&format!("SELECT uuid, name FROM {pg_schema}.organizations WHERE uuid=$1"))
         .bind(org_id)
         .fetch_optional(pool)
         .await?;
@@ -136,9 +139,7 @@ pub async fn associate_organization_with_name(
     };
     let org_name = org.truncated_org_name.as_str();
 
-    let match_on_org_name = query_as::<_, OrganizationRecord>(
-        "SELECT uuid, name FROM public.organizations WHERE name=$1",
-    )
+    let match_on_org_name = query_as::<_, OrganizationRecord>(&format!("SELECT uuid, name FROM {pg_schema}.organizations WHERE name=$1"))
     .bind(org_name)
     .fetch_optional(pool)
     .await?;
@@ -153,9 +154,9 @@ pub async fn associate_organization_with_name(
     }
     let org_type = org.org_type.to_string();
 
-    sqlx::query(
-        "INSERT INTO organizations (uuid, name, aliases, description, artifical_person_type, org_suffix) VALUES ($1, $2, $3, $4, $5, $6)"
-    )
+    sqlx::query(&format!(
+        "INSERT INTO {pg_schema}.organizations (uuid, name, aliases, description, artifical_person_type, org_suffix) VALUES ($1, $2, $3, $4, $5, $6)"
+    ))
     .bind(provisional_uuid)
     .bind(org.truncated_org_name.as_str())
     .bind(vec![org.truncated_org_name.to_string()])
@@ -172,13 +173,14 @@ pub async fn associate_organization_with_name(
 pub async fn upload_docket_party_human_connection(
     upload_party: &mut ProcessedGenericHuman,
     parent_docket_uuid: Uuid,
+    fixed_jur: FixedJurisdiction,
     pool: &PgPool,
 ) -> Result<(), anyhow::Error> {
     if parent_docket_uuid.is_nil() {
         bail!("Uploading docket must have a non nil uuid.")
     }
 
-    associate_individual_author_with_name(upload_party, pool).await?;
+    associate_individual_author_with_name(upload_party, fixed_jur, pool).await?;
 
     if upload_party.object_uuid.is_nil() {
         unreachable!(
@@ -197,9 +199,10 @@ pub async fn upload_docket_party_human_connection(
         .map(|s| s.as_str())
         .unwrap_or("");
 
-    sqlx::query(
-        "INSERT INTO individual_offical_party_to_docket (docket_uuid, individual_uuid, party_email_contact, party_phone_contact) VALUES ($1, $2, $3, $4)"
-    )
+    let pg_schema = fixed_jur.get_postgres_schema_name();
+    sqlx::query(&format!(
+        "INSERT INTO {pg_schema}.individual_offical_party_to_docket (docket_uuid, individual_uuid, party_email_contact, party_phone_contact) VALUES ($1, $2, $3, $4)"
+    ))
     .bind(parent_docket_uuid)
     .bind(upload_party.object_uuid)
     .bind(party_email)
@@ -213,12 +216,13 @@ pub async fn upload_docket_party_human_connection(
 pub async fn upload_docket_petitioner_org_connection(
     upload_petitioner: &mut ProcessedGenericOrganization,
     parent_docket_uuid: Uuid,
+    fixed_jur: FixedJurisdiction,
     pool: &PgPool,
 ) -> Result<(), anyhow::Error> {
     if parent_docket_uuid.is_nil() {
         bail!("Uploading filling must have a non nil uuid.")
     }
-    associate_organization_with_name(upload_petitioner, pool).await?;
+    associate_organization_with_name(upload_petitioner, fixed_jur, pool).await?;
     if upload_petitioner.object_uuid.is_nil() {
         unreachable!(
             "Uploading filling author must have a non nil uuid. This should be impossible because it just happened in the previous step"
@@ -226,9 +230,10 @@ pub async fn upload_docket_petitioner_org_connection(
     };
     let petitioner_uuid = upload_petitioner.object_uuid;
 
-    sqlx::query(
-        "INSERT INTO docket_petitioned_by_org (docket_uuid, petitioner_uuid) VALUES ($1,$2)",
-    )
+    let pg_schema = fixed_jur.get_postgres_schema_name();
+    sqlx::query(&format!(
+        "INSERT INTO {pg_schema}.docket_petitioned_by_org (docket_uuid, petitioner_uuid) VALUES ($1,$2)"
+    ))
     .bind(parent_docket_uuid)
     .bind(petitioner_uuid)
     .execute(pool)
@@ -238,12 +243,13 @@ pub async fn upload_docket_petitioner_org_connection(
 pub async fn upload_filling_organization_author(
     upload_org_author: &mut ProcessedGenericOrganization,
     parent_filling_uuid: Uuid,
+    fixed_jur: FixedJurisdiction,
     pool: &PgPool,
 ) -> Result<(), anyhow::Error> {
     if parent_filling_uuid.is_nil() {
         bail!("Uploading filling must have a non nil uuid.")
     }
-    associate_organization_with_name(upload_org_author, pool).await?;
+    associate_organization_with_name(upload_org_author, fixed_jur, pool).await?;
     if upload_org_author.object_uuid.is_nil() {
         unreachable!(
             "Uploading filling author must have a non nil uuid. This should be impossible because it just happened in the previous step"
@@ -251,9 +257,10 @@ pub async fn upload_filling_organization_author(
     }
     let org_uuid = upload_org_author.object_uuid;
 
-    sqlx::query(
-            "INSERT INTO fillings_on_behalf_of_org_relation (author_organization_uuid, filling_uuid) VALUES ($1, $2)"
-        )
+    let pg_schema = fixed_jur.get_postgres_schema_name();
+    sqlx::query(&format!(
+            "INSERT INTO {pg_schema}.fillings_on_behalf_of_org_relation (author_organization_uuid, filling_uuid) VALUES ($1, $2)"
+        ))
         .bind(org_uuid)
         .bind(parent_filling_uuid)
         .execute(pool)
@@ -264,21 +271,23 @@ pub async fn upload_filling_organization_author(
 pub async fn upload_filling_human_author(
     upload_author: &mut ProcessedGenericHuman,
     parent_filling_uuid: Uuid,
+    fixed_jur: FixedJurisdiction,
     pool: &PgPool,
 ) -> Result<(), anyhow::Error> {
     if parent_filling_uuid.is_nil() {
         bail!("Uploading filling must have a non nil uuid.")
     }
-    associate_individual_author_with_name(upload_author, pool).await?;
+    associate_individual_author_with_name(upload_author, fixed_jur, pool).await?;
     if upload_author.object_uuid.is_nil() {
         unreachable!(
             "Uploading filling author must have a non nil uuid, this should be impossible dispite it being validated on the previous line."
         )
     }
 
-    sqlx::query(
-        "INSERT INTO fillings_filed_by_individual (human_uuid, filling_uuid) VALUES ($1, $2)",
-    )
+    let pg_schema = fixed_jur.get_postgres_schema_name();
+    sqlx::query(&format!(
+        "INSERT INTO {pg_schema}.fillings_filed_by_individual (human_uuid, filling_uuid) VALUES ($1, $2)"
+    ))
     .bind(upload_author.object_uuid)
     .bind(parent_filling_uuid)
     .execute(pool)
@@ -310,7 +319,7 @@ mod tests {
             object_uuid: Uuid::nil(),
             western_first_name: "Test".to_string(),
             western_last_name: "Person".to_string(),
-            human_name: non_empty_string!("Bob Smith"),
+            human_name: "Bob Smith".try_into().unwrap(),
             contact_emails: vec!["test@example.com".to_string()],
             contact_phone_numbers: vec!["+1234567890".to_string()],
             contact_addresses: vec![],
@@ -319,7 +328,8 @@ mod tests {
             title: "Senior Manager".into(),
         };
 
-        let result = associate_individual_author_with_name(&mut individual, &pool).await;
+        let fixed_jur = FixedJurisdiction::NYPUC; // Use a test jurisdiction
+        let result = associate_individual_author_with_name(&mut individual, fixed_jur, &pool).await;
 
         assert!(
             result.is_ok(),
@@ -329,9 +339,10 @@ mod tests {
         assert!(!individual.object_uuid.is_nil(), "UUID should be assigned");
 
         // Verify the person was actually inserted
-        let db_record = query_as::<_, HumanRecord>(
-            "SELECT uuid, western_first_name, western_last_name, contact_emails, contact_phone_numbers FROM humans WHERE uuid = $1"
-        )
+        let pg_schema = fixed_jur.get_postgres_schema_name();
+        let db_record = query_as::<_, HumanRecord>(&format!(
+            "SELECT uuid, western_first_name, western_last_name, contact_emails, contact_phone_numbers FROM {pg_schema}.humans WHERE uuid = $1"
+        ))
         .bind(individual.object_uuid)
         .fetch_one(&pool)
         .await;

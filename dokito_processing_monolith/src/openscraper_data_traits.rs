@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 use crate::data_processing_traits::{ProcessFrom, Revalidate, RevalidationOutcome};
 use crate::indexes::attachment_url_index::lookup_hash_from_url;
+use crate::jurisdiction_schema_mapping::FixedJurisdiction;
 use crate::processing::llm_prompts::{
     clean_up_organization_name_list, split_and_fix_organization_names_blob,
 };
@@ -93,11 +94,11 @@ impl Revalidate for ProcessedGenericAttachment {
 }
 impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
     type ParseError = Infallible;
-    type ExtraData = ();
+    type ExtraData = FixedJurisdiction;
     async fn process_from(
         input: RawGenericDocket,
         cached: Option<Self>,
-        _: Self::ExtraData,
+        fixed_jurisdiction: Self::ExtraData,
     ) -> Result<Self, Self::ParseError> {
         let object_uuid = cached
             .as_ref()
@@ -132,6 +133,7 @@ impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
             .map(|(index, (f_raw, f_cached))| {
                 let filling_index_data = IndexExtraData {
                     index: index as u64,
+                    jurisdiction: fixed_jurisdiction,
                 };
                 async {
                     let res =
@@ -209,7 +211,7 @@ impl ProcessFrom<RawGenericFiling> for ProcessedGenericFiling {
             .as_ref()
             .map(|v| v.object_uuid)
             .unwrap_or_else(Uuid::new_v4);
-        let pg_pool = get_dokito_pool().unwrap();
+        let _pg_pool = get_dokito_pool().unwrap();
         let (processed_attach_map, cached_orgauthorlist, cached_individualauthorllist) =
             match cached {
                 Some(filling) => (
@@ -229,6 +231,7 @@ impl ProcessFrom<RawGenericFiling> for ProcessedGenericFiling {
             .map(|(attach_index, (raw_attach, cached_attach))| {
                 let attach_index_data = IndexExtraData {
                     index: attach_index as u64,
+                    jurisdiction: index_data.jurisdiction,
                 };
                 async {
                     let res = ProcessedGenericAttachment::process_from(
@@ -288,6 +291,7 @@ impl ProcessFrom<RawGenericFiling> for ProcessedGenericFiling {
 
 pub struct IndexExtraData {
     index: u64,
+    jurisdiction: FixedJurisdiction,
 }
 impl ProcessFrom<RawGenericAttachment> for ProcessedGenericAttachment {
     type ParseError = Infallible;

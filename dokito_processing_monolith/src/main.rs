@@ -23,6 +23,7 @@ use std::{
 mod case_worker;
 mod data_processing_traits;
 mod indexes;
+mod jurisdiction_schema_mapping;
 mod openscraper_data_traits;
 mod processing;
 mod s3_stuff;
