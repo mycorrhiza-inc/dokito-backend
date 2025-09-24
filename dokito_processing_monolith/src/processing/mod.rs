@@ -1,7 +1,7 @@
-
 use crate::data_processing_traits::{
     DownloadIncomplete, ProcessFrom, Revalidate, RevalidationOutcome,
 };
+use crate::jurisdiction_schema_mapping::FixedJurisdiction;
 use crate::processing::attachments::OpenscrapersExtraData;
 use crate::s3_stuff::{DocketAddress, download_openscrapers_object, make_s3_client, upload_object};
 use crate::types::jurisdictions::JurisdictionInfo;
@@ -143,6 +143,12 @@ pub struct ReprocessDocketInfo {
 #[async_trait]
 impl ExecuteUserTask for ReprocessDocketInfo {
     async fn execute_task(self: Box<Self>) -> Result<serde_json::Value, serde_json::Value> {
+        let Ok(fixed_jurisdiction) = FixedJurisdiction::try_from(&self.jurisdiction) else {
+            return Err(serde_json::Value::String(
+                "Jurisdiction did not match one that is stored in the database, aborting."
+                    .to_string(),
+            ));
+        };
         // let self = *self;
         let s3_client = make_s3_client().await;
         let docket_address = DocketAddress {
@@ -168,7 +174,7 @@ impl ExecuteUserTask for ReprocessDocketInfo {
             return Ok("Found cached case, skipping".into());
         };
         let Ok(processed_case) =
-            ProcessedGenericDocket::process_from(raw_case, cached_docket, ()).await;
+            ProcessedGenericDocket::process_from(raw_case, cached_docket, fixed_jurisdiction).await;
         tracing::info!(docket_govid=%processed_case.case_govid,"Successfully processed case");
         let upload_res = upload_object(&s3_client, &docket_address, &processed_case).await;
         map_err_as_json(upload_res)?;
