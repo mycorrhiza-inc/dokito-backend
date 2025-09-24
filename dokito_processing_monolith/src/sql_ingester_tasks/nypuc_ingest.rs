@@ -24,7 +24,10 @@ use crate::{
     data_processing_traits::Revalidate,
     jurisdiction_schema_mapping::FixedJurisdiction,
     processing::{attachments::OpenscrapersExtraData, process_case},
-    sql_ingester_tasks::{database_author_association::*, dokito_sql_connection::get_dokito_pool},
+    sql_ingester_tasks::{
+        database_author_association::*, dokito_sql_connection::get_dokito_pool,
+        recreate_dokito_table_schema::delete_all_data,
+    },
 };
 
 #[derive(Clone, Copy, Deserialize, JsonSchema)]
@@ -98,7 +101,7 @@ pub async fn ingest_all_fixed_jurisdiction_data(
 
     // Drop all existing tables first
     if purge_data {
-        delete_all_data(pool).await?;
+        delete_all_data(fixed_jur, pool).await?;
         info!("Successfully deleted all old case data.");
     }
     // We can set this to always true since we just purged the dataset.
@@ -415,59 +418,5 @@ pub async fn ingest_sql_fixed_jurisdiction_case(
     }
 
     tracing::info!(govid=%case.case_govid, uuid=%docket_uuid,"Successfully processed case with no errors");
-    Ok(())
-}
-
-pub async fn delete_all_data(pool: &PgPool) -> anyhow::Result<()> {
-    info!("Starting full data deletion...");
-
-    // Start a transaction
-    let mut tx = pool.begin().await?;
-
-    // Disable statement timeout just for this transaction
-    sqlx::query("SET LOCAL statement_timeout = 0;")
-        .execute(&mut *tx)
-        .await?;
-    info!("Disabled statement_timeout for this transaction");
-
-    // Drop relation tables first (with CASCADE)
-    info!("Deleting from fillings_filed_by_org_relation");
-    sqlx::query("TRUNCATE fillings_filed_by_org_relation CASCADE")
-        .execute(&mut *tx)
-        .await?;
-
-    info!("Deleting from fillings_on_behalf_of_org_relation");
-    sqlx::query("TRUNCATE fillings_on_behalf_of_org_relation CASCADE")
-        .execute(&mut *tx)
-        .await?;
-
-    // Attachments
-    info!("Deleting from attachments");
-    sqlx::query("TRUNCATE attachments CASCADE")
-        .execute(&mut *tx)
-        .await?;
-
-    // Organizations
-    info!("Deleting from organizations");
-    sqlx::query("TRUNCATE organizations CASCADE")
-        .execute(&mut *tx)
-        .await?;
-
-    // Fillings
-    info!("Deleting from fillings");
-    sqlx::query("TRUNCATE fillings CASCADE")
-        .execute(&mut *tx)
-        .await?;
-
-    // Dockets
-    info!("Deleting from dockets");
-    sqlx::query("TRUNCATE dockets CASCADE")
-        .execute(&mut *tx)
-        .await?;
-
-    // Commit once everything is successful
-    tx.commit().await?;
-    info!("All data deleted successfully ✅");
-
     Ok(())
 }

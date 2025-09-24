@@ -126,7 +126,9 @@ pub async fn associate_organization_with_name(
     let pg_schema = fixed_jur.get_postgres_schema_name();
     if !org.object_uuid.is_nil() {
         let org_id = org.object_uuid;
-        let match_on_uuid = query_as::<_, OrganizationRecord>(&format!("SELECT uuid, name FROM {pg_schema}.organizations WHERE uuid=$1"))
+        let match_on_uuid = query_as::<_, OrganizationRecord>(&format!(
+            "SELECT uuid, name FROM {pg_schema}.organizations WHERE uuid=$1"
+        ))
         .bind(org_id)
         .fetch_optional(pool)
         .await?;
@@ -139,7 +141,9 @@ pub async fn associate_organization_with_name(
     };
     let org_name = org.truncated_org_name.as_str();
 
-    let match_on_org_name = query_as::<_, OrganizationRecord>(&format!("SELECT uuid, name FROM {pg_schema}.organizations WHERE name=$1"))
+    let match_on_org_name = query_as::<_, OrganizationRecord>(&format!(
+        "SELECT uuid, name FROM {pg_schema}.organizations WHERE name=$1"
+    ))
     .bind(org_name)
     .fetch_optional(pool)
     .await?;
@@ -328,7 +332,7 @@ mod tests {
             title: "Senior Manager".into(),
         };
 
-        let fixed_jur = FixedJurisdiction::NYPUC; // Use a test jurisdiction
+        let fixed_jur = FixedJurisdiction::NewYorkPuc; // Use a test jurisdiction
         let result = associate_individual_author_with_name(&mut individual, fixed_jur, &pool).await;
 
         assert!(

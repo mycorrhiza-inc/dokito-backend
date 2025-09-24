@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum FixedJurisdiction {
     NewYorkPuc,
     ColoradoPuc,

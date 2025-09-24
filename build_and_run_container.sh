@@ -10,7 +10,7 @@ else
 fi
 
 # Build container; only run docker if build succeeds
-if nix run .#build-container; then
+if nix run --extra-experimental-features nix-command --extra-experimental-features flakes .#build-container; then
   echo "Container built successfully. Running docker..."
   docker run --env-file .env dokito-backend:latest
 else
