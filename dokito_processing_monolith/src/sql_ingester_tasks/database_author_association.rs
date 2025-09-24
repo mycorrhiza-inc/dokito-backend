@@ -1,7 +1,6 @@
 use anyhow::bail;
 use dokito_types::processed::{ProcessedGenericHuman, ProcessedGenericOrganization};
-use non_empty_string::non_empty_string;
-use sqlx::{FromRow, PgPool, query, query_as};
+use sqlx::{FromRow, PgPool, query_as};
 use std::collections::BTreeSet;
 use uuid::Uuid;
 

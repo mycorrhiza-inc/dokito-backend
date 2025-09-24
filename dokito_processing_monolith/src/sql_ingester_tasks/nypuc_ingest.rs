@@ -22,7 +22,8 @@ use tracing::{info, warn};
 
 use crate::{
     data_processing_traits::Revalidate,
-    processing::process_case,
+    jurisdiction_schema_mapping::FixedJurisdiction,
+    processing::{attachments::OpenscrapersExtraData, process_case},
     sql_ingester_tasks::{database_author_association::*, dokito_sql_connection::get_dokito_pool},
 };
 
@@ -162,9 +163,14 @@ async fn get_processed_case_or_process_if_not_existing(
             let jurisdiction = case_address.jurisdiction.clone();
             let raw_case =
                 download_openscrapers_object::<RawGenericDocket>(&s3_client, case_address).await?;
-            let extra_info = (s3_client, jurisdiction);
+            let fixed_jurisdiction = FixedJurisdiction::try_from(&jurisdiction).unwrap();
+            let extra_info = OpenscrapersExtraData {
+                s3_client,
+                jurisdiction_info: jurisdiction,
+                fixed_jurisdiction,
+            };
 
-            process_case(raw_case, &extra_info).await
+            process_case(raw_case, extra_info).await
         }
     };
     match docket {
@@ -214,7 +220,7 @@ pub async fn ingest_sql_case_with_retries(
                 return_res = Err(err);
                 let existing_docket: Option<Uuid> =
                     query_scalar("SELECT uuid FROM dockets WHERE docket_govid = $1")
-                        .bind(&case.case_govid.as_str())
+                        .bind(case.case_govid.as_str())
                         .fetch_optional(pool)
                         .await?;
 
@@ -331,7 +337,7 @@ pub async fn ingest_sql_nypuc_case(
         .bind(&filling.filing_type)
         .bind(&filling.name)
         .bind(&filling.description)
-        .bind(&filling.object_uuid.to_string())
+        .bind(filling.object_uuid.to_string())
         .fetch_one(pool)
         .await?;
         if filling_uuid != filling.object_uuid {

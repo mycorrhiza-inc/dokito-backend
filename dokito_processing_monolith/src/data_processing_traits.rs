@@ -49,6 +49,6 @@ pub trait DownloadIncomplete {
     type ExtraData;
     async fn download_incomplete(
         &mut self,
-        extra: &Self::ExtraData,
+        extra: Self::ExtraData,
     ) -> anyhow::Result<RevalidationOutcome>;
 }

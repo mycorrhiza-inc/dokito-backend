@@ -1,5 +1,6 @@
 use crate::data_processing_traits::{DownloadIncomplete, RevalidationOutcome};
 use crate::indexes::attachment_url_index::lookup_hash_from_url;
+use crate::jurisdiction_schema_mapping::FixedJurisdiction;
 use crate::processing::file_fetching::{FileDownloadError, RequestMethod};
 use crate::s3_stuff::{
     generate_s3_object_uri_from_key, get_raw_attach_file_key, get_s3_json_uri,
@@ -26,12 +27,21 @@ use super::file_fetching::{AdvancedFetchData, FileDownloadResult, InternetFileFe
 const ATTACHMENT_DOWNLOAD_TRIES: usize = 2;
 const DOWNLOAD_RETRY_DELAY_SECONDS: u64 = 2;
 
-pub type OpenscrapersExtraData = (S3Client, JurisdictionInfo);
+// For context it was previously this
+// pub type OpenscrapersExtraData = (S3Client, JurisdictionInfo);
+
+#[derive(Clone)]
+pub struct OpenscrapersExtraData {
+    pub s3_client: S3Client,
+    pub jurisdiction_info: JurisdictionInfo,
+    pub fixed_jurisdiction: FixedJurisdiction,
+}
+
 impl DownloadIncomplete for ProcessedGenericAttachment {
     type ExtraData = OpenscrapersExtraData;
     async fn download_incomplete(
         &mut self,
-        (s3_client, jurisdiction_info): &Self::ExtraData,
+        extra_data: Self::ExtraData,
     ) -> anyhow::Result<RevalidationOutcome> {
         let name = NonEmptyString::from_str(&self.name)
             .unwrap_or_else(|_| non_empty_string!("unknown_filename"));
@@ -58,7 +68,7 @@ impl DownloadIncomplete for ProcessedGenericAttachment {
             .unwrap_or_default();
 
         let raw_attachment = RawAttachment {
-            jurisdiction_info: jurisdiction_info.to_owned(),
+            jurisdiction_info: extra_data.jurisdiction_info.clone(),
             url: self.url.clone(),
             hash,
             file_size_bytes: file_contents.len() as u64,
@@ -69,7 +79,7 @@ impl DownloadIncomplete for ProcessedGenericAttachment {
             date_updated: Utc::now(),
             extra_metadata: metadata,
         };
-        shipout_attachment_to_s3(file_contents, raw_attachment, s3_client).await?;
+        shipout_attachment_to_s3(file_contents, raw_attachment, &extra_data.s3_client).await?;
         self.hash = Some(hash);
         debug!(%hash, url = %self.url,"Successfully downloaded attachment and saved everything to s3.");
         Ok(RevalidationOutcome::DidChange)

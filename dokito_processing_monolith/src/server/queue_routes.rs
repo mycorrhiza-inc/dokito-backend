@@ -1,3 +1,5 @@
+use crate::jurisdiction_schema_mapping::FixedJurisdiction;
+
 use aide::{self, axum::IntoApiResponse, transform::TransformOperation};
 use axum::{
     extract::Path,
@@ -16,7 +18,7 @@ use tracing::info;
 use crate::{
     case_worker::ProcessCaseWithoutDownload,
     data_processing_traits::Revalidate,
-    processing::process_case,
+    processing::{attachments::OpenscrapersExtraData, process_case},
     server::s3_routes::JurisdictionPath,
     sql_ingester_tasks::{
         dokito_sql_connection::get_dokito_pool, nypuc_ingest::ingest_sql_case_with_retries,
@@ -43,7 +45,13 @@ pub async fn manual_fully_process_dockets_right_now(
 
     let s3_client = DIGITALOCEAN_S3.make_s3_client().await;
 
-    let extra = (s3_client, jurisdiction);
+    let fixed_jurisdiction = FixedJurisdiction::try_from(&jurisdiction).unwrap();
+
+    let extra = OpenscrapersExtraData {
+        s3_client,
+        jurisdiction_info: jurisdiction,
+        fixed_jurisdiction,
+    };
 
     // Create a semaphore to limit concurrent processing to 30
     let semaphore = std::sync::Arc::new(Semaphore::new(30));
@@ -57,7 +65,7 @@ pub async fn manual_fully_process_dockets_right_now(
             // Acquire permit from semaphore
             let _permit = semaphore_clone.acquire().await.unwrap();
             info!(?docket.case_govid, "Processing docket");
-            match process_case(docket, &extra_clone).await {
+            match process_case(docket, extra_clone).await {
                 Ok(processed) => {
                     info!(?processed.case_govid, "Successfully processed docket");
                     Some(processed)

@@ -211,7 +211,7 @@ impl ProcessFrom<RawGenericFiling> for ProcessedGenericFiling {
             .as_ref()
             .map(|v| v.object_uuid)
             .unwrap_or_else(Uuid::new_v4);
-        let pg_pool = get_dokito_pool().unwrap();
+        let _pg_pool = get_dokito_pool().unwrap();
         let (processed_attach_map, cached_orgauthorlist, cached_individualauthorllist) =
             match cached {
                 Some(filling) => (

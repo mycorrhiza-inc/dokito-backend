@@ -3,17 +3,20 @@ use std::collections::{BTreeMap, HashSet};
 use aws_sdk_s3::Client;
 use axum::Json;
 use chrono::{DateTime, NaiveDate, Utc};
+use futures::future::join_all;
 use futures_util::{StreamExt, stream};
 use mycorrhiza_common::tasks::ExecuteUserTask;
 use rand::{SeedableRng, rngs::SmallRng, seq::SliceRandom};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, query_as};
+use tokio::sync::Semaphore;
 use tracing::info;
 
 use crate::{
     data_processing_traits::DownloadIncomplete,
-    processing::ReprocessDocketInfo,
+    jurisdiction_schema_mapping::FixedJurisdiction,
+    processing::{ReprocessDocketInfo, attachments::OpenscrapersExtraData},
     s3_stuff::{
         DocketAddress, download_openscrapers_object, list_processed_cases_for_jurisdiction,
         list_raw_cases_for_jurisdiction, make_s3_client, upload_object,
@@ -119,7 +122,7 @@ pub async fn handle_download_all_missing_hashes_newest(
         .collect();
     info!(length = %caselist.len(),"Successfully got caselist, beginning to download.");
 
-    let _res = download_attachments_from_docids(caselist, &s3_client, &payload).await;
+    let _res = download_attachments_from_docids(caselist, s3_client, payload).await;
     Ok("Completed Successfully".into())
 }
 pub async fn handle_download_all_missing_hashes_random(
@@ -132,34 +135,46 @@ pub async fn handle_download_all_missing_hashes_random(
     // Randomizing the list just to insure that the processing difficulty is uniform.
     let mut rng = SmallRng::from_os_rng();
     processed_caselist.shuffle(&mut rng);
-    let _res = download_attachments_from_docids(processed_caselist, &s3_client, &payload).await;
+    let _res = download_attachments_from_docids(processed_caselist, s3_client, payload).await;
     Ok("Completed Successfully".into())
 }
 
 pub async fn download_attachments_from_docids(
     docid_list: Vec<String>,
-    s3_client: &Client,
-    jur_info: &JurisdictionInfo,
+    s3_client: Client,
+    jur_info: JurisdictionInfo,
 ) {
-    let extra_info = (s3_client.clone(), jur_info.clone());
-    let _tasks = stream::iter(docid_list.into_iter())
-        .map(|docket_govid| async {
+    let fixed_jurisdiction = FixedJurisdiction::try_from(&jur_info).unwrap();
+    let extra_info = OpenscrapersExtraData {
+        s3_client: s3_client.clone(),
+        jurisdiction_info: jur_info.clone(),
+        fixed_jurisdiction,
+    };
+    let max_simultaneous_attachment_process = Semaphore::new(20);
+    let task_futures = docid_list
+        .into_iter()
+        .map(async |docket_govid| {
+            let extra_info_clone = extra_info.clone();
+            let s3_client_clone = s3_client.clone();
             let docket_address = DocketAddress {
                 jurisdiction: jur_info.clone(),
                 docket_govid,
             };
-            if let Ok(mut proc_docket) =
-                download_openscrapers_object::<ProcessedGenericDocket>(s3_client, &docket_address)
-                    .await
+            let permit = max_simultaneous_attachment_process.acquire().await;
+            if let Ok(mut proc_docket) = download_openscrapers_object::<ProcessedGenericDocket>(
+                &s3_client_clone,
+                &docket_address,
+            )
+            .await
             {
-                let res = proc_docket.download_incomplete(&extra_info).await;
+                let res = proc_docket.download_incomplete(extra_info_clone).await;
                 if res.is_ok() {
-                    let _ = upload_object(s3_client, &docket_address, &proc_docket).await;
+                    let _ = upload_object(&s3_client_clone, &docket_address, &proc_docket).await;
                 }
             };
+            drop(permit);
         })
-        .buffer_unordered(20)
-        .collect::<Vec<_>>()
-        .await;
-    info!(dockets_downloaded = %_tasks.len(),"Finished downloading attachments");
+        .collect::<Vec<_>>();
+    let results = join_all(task_futures).await;
+    info!(dockets_downloaded = %results.len(),"Finished downloading attachments");
 }
