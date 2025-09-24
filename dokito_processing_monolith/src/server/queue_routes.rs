@@ -45,7 +45,8 @@ pub async fn manual_fully_process_dockets_right_now(
 
     let s3_client = DIGITALOCEAN_S3.make_s3_client().await;
 
-    let fixed_jurisdiction = FixedJurisdiction::try_from(&jurisdiction).unwrap();
+    let fixed_jurisdiction =
+        FixedJurisdiction::try_from(&jurisdiction).map_err(|err| err.to_string())?;
 
     let extra = OpenscrapersExtraData {
         s3_client,
@@ -115,6 +116,7 @@ pub async fn manual_fully_process_dockets_right_now(
             // We don't return anything from this function as errors are handled internally
             let _ = ingest_sql_case_with_retries(
                 &mut docket_clone,
+                fixed_jurisdiction,
                 &pool_clone,
                 ignore_existing,
                 tries,

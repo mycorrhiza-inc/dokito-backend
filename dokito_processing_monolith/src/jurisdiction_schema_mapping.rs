@@ -1,7 +1,9 @@
 use dokito_types::jurisdictions::JurisdictionInfo;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, JsonSchema)]
 pub enum FixedJurisdiction {
     NewYorkPuc,
     ColoradoPuc,
@@ -47,8 +49,12 @@ const ALL_FIXED_JURISDICTIONS: &[FixedJurisdiction] = &[
     FixedJurisdiction::CaliforniaPuc,
     FixedJurisdiction::UtahDogmCoal,
 ];
+
+#[derive(Error, Debug)]
+#[error("Could not find a matching fixed jurisdiction for jurisdiction info")]
+pub struct UnmatchedJurisdictionInfo {}
 impl TryFrom<&JurisdictionInfo> for FixedJurisdiction {
-    type Error = ();
+    type Error = UnmatchedJurisdictionInfo;
 
     fn try_from(value: &JurisdictionInfo) -> Result<Self, Self::Error> {
         ALL_FIXED_JURISDICTIONS
@@ -59,7 +65,7 @@ impl TryFrom<&JurisdictionInfo> for FixedJurisdiction {
                     && jur.get_state_code() == value.state
                     && jur.get_country_code() == value.country
             })
-            .ok_or(())
+            .ok_or(UnmatchedJurisdictionInfo {})
     }
 }
 
