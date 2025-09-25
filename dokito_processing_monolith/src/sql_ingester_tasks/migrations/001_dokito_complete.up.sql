@@ -113,6 +113,18 @@ CREATE TABLE public.fillings_filed_by_individual (
 );
 ALTER TABLE public.fillings_filed_by_individual ENABLE ROW LEVEL SECURITY;
 
+-- Fillings filed by org relation
+CREATE TABLE public.fillings_filed_by_org_relation (
+  uuid uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  filling_uuid uuid NOT NULL,
+  organization_uuid uuid NOT NULL,
+  CONSTRAINT fillings_filed_by_org_relation_pkey PRIMARY KEY (uuid),
+  CONSTRAINT fillings_filed_by_org_relation_organization_uuid_fkey FOREIGN KEY (organization_uuid) REFERENCES public.organizations(uuid),
+  CONSTRAINT fillings_filed_by_org_relation_filling_uuid_fkey FOREIGN KEY (filling_uuid) REFERENCES public.fillings(uuid)
+);
+ALTER TABLE public.fillings_filed_by_org_relation ENABLE ROW LEVEL SECURITY;
+
 -- Fillings on behalf of org relation
 CREATE TABLE public.fillings_on_behalf_of_org_relation (
   relation_uuid uuid NOT NULL DEFAULT gen_random_uuid(),

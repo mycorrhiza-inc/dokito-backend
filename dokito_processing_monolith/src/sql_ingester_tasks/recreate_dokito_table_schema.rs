@@ -3,7 +3,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
 use sqlx::{Executor, PgPool, migrate::Migrator};
-use tracing::info;
+use tracing::{info, warn};
 
 use mycorrhiza_common::tasks::ExecuteUserTask;
 
@@ -45,23 +45,24 @@ impl ExecuteUserTask for RecreateDokitoTableSchema {
 }
 
 pub async fn recreate_schema(fixed_jur: FixedJurisdiction) -> anyhow::Result<()> {
+    let pg_schema = fixed_jur.get_postgres_schema_name();
     info!("Got request to recreate schema");
     let pool = get_dokito_pool()?;
     info!("Created pg pool");
 
-    let mut migrator = sqlx::migrate!("./src/sql_ingester_tasks/migrations");
-
-    let num_migrations = migrator.iter().count();
-    info!(%num_migrations,"Created sqlx migrator");
-
     info!("Dropping existing tables");
-    drop_existing_schema(fixed_jur, &pool, &mut migrator).await?;
+    let drop_result = drop_existing_schema(fixed_jur, pool).await;
+    if let Err(err) = drop_result {
+        warn!(%err,%pg_schema,"Encountered error in dropping schema.  Continuing on and creating new tables.")
+    } else {
+        info!(%pg_schema,"Tables deleted successfully.")
+    }
 
-    info!("Creating tables");
+    info!(%pg_schema,"Creating tables");
     // create_schema(&pool).await?;
-    create_schema(fixed_jur, &pool, &mut migrator).await?;
+    create_schema(fixed_jur, pool).await?;
 
-    info!("Successfully recreated schema");
+    info!(%pg_schema,"Successfully recreated schema");
 
     Ok(())
 }
@@ -69,7 +70,6 @@ pub async fn recreate_schema(fixed_jur: FixedJurisdiction) -> anyhow::Result<()>
 pub async fn drop_existing_schema(
     fixed_jur: FixedJurisdiction,
     pool: &PgPool,
-    _migrator: &mut Migrator,
 ) -> anyhow::Result<()> {
     let pg_schema = fixed_jur.get_postgres_schema_name();
     // migrator.set_ignore_missing(true).undo(pool, 0).await?;
@@ -82,11 +82,7 @@ pub async fn drop_existing_schema(
     Ok(())
 }
 
-pub async fn create_schema(
-    fixed_jur: FixedJurisdiction,
-    pool: &PgPool,
-    _migrator: &mut Migrator,
-) -> anyhow::Result<()> {
+pub async fn create_schema(fixed_jur: FixedJurisdiction, pool: &PgPool) -> anyhow::Result<()> {
     let pg_schema = fixed_jur.get_postgres_schema_name();
     // migrator.set_ignore_missing(true).run(pool).await?;
 
@@ -99,7 +95,11 @@ pub async fn create_schema(
     let migration_sql = include_str!("./migrations/001_dokito_complete.up.sql");
     let schema_specific_sql = migration_sql.replace("public.", &format!("{pg_schema}."));
 
-    sqlx::query(&schema_specific_sql).execute(pool).await?;
+    info!(%pg_schema, "Executing complete schema creation SQL");
+
+    // Execute the entire SQL as a single raw query
+    sqlx::raw_sql(&schema_specific_sql).execute(pool).await?;
+
     Ok(())
 }
 
@@ -108,55 +108,16 @@ pub async fn delete_all_data(fixed_jur: FixedJurisdiction, pool: &PgPool) -> any
     info!("Starting full data deletion...");
 
     // Start a transaction
-    let mut tx = pool.begin().await?;
 
-    // Disable statement timeout just for this transaction
-    sqlx::query("SET LOCAL statement_timeout = 0;")
-        .execute(&mut *tx)
-        .await?;
-    info!("Disabled statement_timeout for this transaction");
+    // Read the truncate file content and replace default schema references with dynamic schema
+    let truncate_sql = include_str!("./migrations/truncate_all.sql");
+    let schema_specific_truncate_sql = truncate_sql.replace("public.", &format!("{pg_schema}."));
 
-    // Drop relation tables first (with CASCADE)
-    info!("Deleting from fillings_filed_by_org_relation");
-    sqlx::query(&format!(
-        "TRUNCATE {pg_schema}.fillings_filed_by_org_relation CASCADE"
-    ))
-    .execute(&mut *tx)
-    .await?;
-
-    info!("Deleting from fillings_on_behalf_of_org_relation");
-    sqlx::query(&format!(
-        "TRUNCATE {pg_schema}.fillings_on_behalf_of_org_relation CASCADE"
-    ))
-    .execute(&mut *tx)
-    .await?;
-
-    // Attachments
-    info!("Deleting from attachments");
-    sqlx::query(&format!("TRUNCATE {pg_schema}.attachments CASCADE"))
-        .execute(&mut *tx)
+    info!("Executing truncate operations");
+    sqlx::raw_sql(&schema_specific_truncate_sql)
+        .execute(pool)
         .await?;
 
-    // Organizations
-    info!("Deleting from organizations");
-    sqlx::query(&format!("TRUNCATE {pg_schema}.organizations CASCADE"))
-        .execute(&mut *tx)
-        .await?;
-
-    // Fillings
-    info!("Deleting from fillings");
-    sqlx::query(&format!("TRUNCATE {pg_schema}.fillings CASCADE"))
-        .execute(&mut *tx)
-        .await?;
-
-    // Dockets
-    info!("Deleting from dockets");
-    sqlx::query(&format!("TRUNCATE {pg_schema}.dockets CASCADE"))
-        .execute(&mut *tx)
-        .await?;
-
-    // Commit once everything is successful
-    tx.commit().await?;
     info!("All data deleted successfully ✅");
 
     Ok(())

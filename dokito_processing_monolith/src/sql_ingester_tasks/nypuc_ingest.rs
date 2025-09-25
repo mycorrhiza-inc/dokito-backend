@@ -8,7 +8,10 @@ use dokito_types::{
     raw::RawGenericDocket,
     s3_stuff::{DocketAddress, list_raw_cases_for_jurisdiction},
 };
-use futures::stream::{self, StreamExt};
+use futures::{
+    future::join_all,
+    stream::{self, StreamExt},
+};
 use rand::{SeedableRng, rngs::SmallRng, seq::SliceRandom};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -18,6 +21,7 @@ use sqlx::{PgPool, Pool, Postgres, query_scalar, types::Uuid};
 use mycorrhiza_common::{
     s3_generic::cannonical_location::download_openscrapers_object, tasks::ExecuteUserTask,
 };
+use tokio::sync::Semaphore;
 use tracing::{info, warn};
 
 use crate::{
@@ -124,16 +128,14 @@ pub async fn ingest_all_fixed_jurisdiction_data(
     let cases_to_process_len = case_govids.len();
     info!(total_cases = %original_caselist_length, cases_to_process= %cases_to_process_len,"Filtered down original raw cases to a subset that is not present in the database.");
 
+    let max_simultaneous_cases = Semaphore::new(20);
     let execute_case_wraped = async |case_id: String| {
+        let _perm = max_simultaneous_cases.acquire().await;
         ingest_wrapped_fixed_jurisdiction_data(fixed_jur, &case_id, pool, ignore_existing).await
     };
+    let future_cases = case_govids.into_iter().map(execute_case_wraped);
+    let futures_count = join_all(future_cases).await.len();
 
-    // Create a stream of futures to fetch and ingest each case concurrently
-    let futures_count = stream::iter(case_govids)
-        .map(execute_case_wraped)
-        .buffer_unordered(20)
-        .count()
-        .await;
     info!(
         futures_count,
         "Successfully completed all sql ingest futures."
