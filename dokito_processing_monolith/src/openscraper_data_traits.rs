@@ -3,8 +3,12 @@ use std::convert::Infallible;
 use chrono::{NaiveDate, Utc};
 use dokito_types::processed::ProcessedGenericHuman;
 use dokito_types::raw::RawArtificalPersonType;
+use futures::future::join_all;
+use futures::join;
 use futures_util::{StreamExt, stream};
 use non_empty_string::NonEmptyString;
+use thiserror::Error;
+use tokio::sync::Semaphore;
 use tracing::warn;
 use uuid::Uuid;
 
@@ -16,6 +20,9 @@ use crate::processing::llm_prompts::{
 };
 use crate::processing::match_raw_processed::{
     match_raw_attaches_to_processed_attaches, match_raw_fillings_to_processed_fillings,
+};
+use crate::sql_ingester_tasks::database_author_association::{
+    associate_individual_author_with_name, associate_organization_with_name,
 };
 use crate::sql_ingester_tasks::dokito_sql_connection::get_dokito_pool;
 use crate::types::processed::{
@@ -128,24 +135,25 @@ impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
         let cached_fillings = cached.map(|d| d.filings);
         let matched_fillings =
             match_raw_fillings_to_processed_fillings(input.filings, cached_fillings);
-        let mut processed_fillings = stream::iter(matched_fillings.into_iter())
-            .enumerate()
-            .map(|(index, (f_raw, f_cached))| {
-                let filling_index_data = IndexExtraData {
-                    index: index as u64,
-                    jurisdiction: fixed_jurisdiction,
-                };
-                async {
+        let processed_fillings_futures =
+            matched_fillings
+                .into_iter()
+                .enumerate()
+                .map(async |(index, (f_raw, f_cached))| {
+                    let filling_index_data = IndexExtraData {
+                        index: index as u64,
+                        jurisdiction: fixed_jurisdiction,
+                    };
                     let res =
                         ProcessedGenericFiling::process_from(f_raw, f_cached, filling_index_data)
                             .await;
                     let Ok(val) = res;
                     val
-                }
-            })
-            .buffer_unordered(5)
-            .collect::<Vec<_>>()
-            .await;
+                });
+        // Everything gets processed at once since the limiting factor on fillings is global. This
+        // is to make it so that it doesnt overwhelm the system trying to process 5 dockets with
+        // 10,000 fillings, but it can process 60 dockets at the same time with one filling each.
+        let mut processed_fillings = join_all(processed_fillings_futures).await;
 
         let parties = input.case_parties;
         let mut case_parties = vec![];
@@ -199,6 +207,15 @@ impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
     }
 }
 
+#[derive(Error, Debug)]
+enum ProcessError {
+    #[error("Encountered error syncing data with postgres.")]
+    PostgresError,
+}
+
+// TODO: Might be a good idea to have a semaphore for each
+static GLOBAL_SIMULTANEOUS_FILE_PROCESSING: Semaphore = Semaphore::const_new(50);
+
 impl ProcessFrom<RawGenericFiling> for ProcessedGenericFiling {
     type ParseError = Infallible;
     type ExtraData = IndexExtraData;
@@ -207,6 +224,7 @@ impl ProcessFrom<RawGenericFiling> for ProcessedGenericFiling {
         cached: Option<Self>,
         index_data: Self::ExtraData,
     ) -> Result<Self, Self::ParseError> {
+        let _permit = GLOBAL_SIMULTANEOUS_FILE_PROCESSING.acquire().await.unwrap();
         let object_uuid = cached
             .as_ref()
             .map(|v| v.object_uuid)
@@ -249,7 +267,7 @@ impl ProcessFrom<RawGenericFiling> for ProcessedGenericFiling {
             .await;
         processed_attachments.sort_by_key(|att| att.index_in_filling);
         // Process org and individual author names.
-        let organization_authors = {
+        let mut organization_authors = {
             if let Some(org_authors) = cached_orgauthorlist {
                 org_authors
             } else if input.organization_authors.is_empty() {
@@ -259,7 +277,7 @@ impl ProcessFrom<RawGenericFiling> for ProcessedGenericFiling {
             }
         };
 
-        let individual_authors = {
+        let mut individual_authors = {
             if let Some(individual_authors) = cached_individualauthorllist {
                 individual_authors
             } else if input.individual_authors.is_empty() {
@@ -269,6 +287,16 @@ impl ProcessFrom<RawGenericFiling> for ProcessedGenericFiling {
                 vec![]
             }
         };
+        let fixed_jur = index_data.jurisdiction;
+        let pool = get_dokito_pool().unwrap();
+
+        let org_futures = organization_authors
+            .iter_mut()
+            .map(|org| associate_organization_with_name(org, fixed_jur, pool));
+        let human_futures = individual_authors
+            .iter_mut()
+            .map(|human| associate_individual_author_with_name(human, fixed_jur, pool));
+        let _res = join!(join_all(org_futures), join_all(human_futures));
 
         let proc_filling = Self {
             object_uuid,

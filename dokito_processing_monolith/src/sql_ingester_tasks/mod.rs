@@ -18,8 +18,8 @@ pub mod recreate_dokito_table_schema;
 pub fn add_sql_ingest_task_routes(router: ApiRouter) -> ApiRouter {
     let router = declare_task_route::<FixedJurisdictionPurgePrevious>(router);
     let router = declare_task_route::<GetMissingDocketsForFixedJurisdiction>(router);
+    let router = declare_task_route::<RecreateDokitoTableSchema>(router);
     let router = declare_default_task_route::<InitializeConfig>(router);
-    let router = declare_default_task_route::<RecreateDokitoTableSchema>(router);
 
     identity(router)
 }

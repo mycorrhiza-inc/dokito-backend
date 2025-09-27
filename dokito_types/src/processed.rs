@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fmt::Display,
+};
 
 use chrono::{DateTime, NaiveDate, Utc};
 use mycorrhiza_common::{file_extension::FileExtension, hash::Blake2bHash};
@@ -62,7 +65,7 @@ where
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Hash)]
 #[serde(untagged)]
 pub enum ProcessedArtificalPerson {
-    Human(ProcessedGenericHuman),
+    Human(Box<ProcessedGenericHuman>),
     Organization(ProcessedGenericOrganization),
 }
 
@@ -98,9 +101,9 @@ pub enum OrganizationType {
     GovernmentAgency,
 }
 
-impl ToString for OrganizationType {
-    fn to_string(&self) -> String {
-        serde_json::to_string(self).unwrap()
+impl Display for OrganizationType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", serde_json::to_string(&self).unwrap())
     }
 }
 

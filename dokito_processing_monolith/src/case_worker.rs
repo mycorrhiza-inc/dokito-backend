@@ -16,7 +16,9 @@ impl ExecuteUserTask for ProcessCaseWithoutDownload {
             docket,
             jurisdiction,
         } = self.0;
-        let fixed_jurisdiction = FixedJurisdiction::try_from(&jurisdiction).unwrap();
+        let Ok(fixed_jurisdiction) = FixedJurisdiction::try_from(&jurisdiction) else {
+            return Err("Could not match jurisdiction with one we have support for.".into());
+        };
         let extra_data = OpenscrapersExtraData {
             s3_client,
             jurisdiction_info: jurisdiction,

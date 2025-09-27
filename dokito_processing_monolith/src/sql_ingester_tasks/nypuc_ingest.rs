@@ -1,14 +1,20 @@
-use std::{collections::HashSet, mem::take};
+use std::{
+    collections::HashSet,
+    hash::{DefaultHasher, Hash, Hasher},
+    mem::take,
+};
 
 use async_trait::async_trait;
 use dokito_types::{
     env_vars::DIGITALOCEAN_S3,
     jurisdictions::JurisdictionInfo,
-    processed::{ProcessedGenericDocket, ProcessedGenericOrganization},
+    processed::{ProcessedGenericDocket, ProcessedGenericFiling, ProcessedGenericOrganization},
     raw::RawGenericDocket,
     s3_stuff::{DocketAddress, list_raw_cases_for_jurisdiction},
 };
-use futures::stream::{self, StreamExt};
+use futures::{
+    future::join_all,
+};
 use rand::{SeedableRng, rngs::SmallRng, seq::SliceRandom};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -16,15 +22,20 @@ use serde_json::Value;
 use sqlx::{PgPool, Pool, Postgres, query_scalar, types::Uuid};
 
 use mycorrhiza_common::{
-    s3_generic::cannonical_location::download_openscrapers_object, tasks::ExecuteUserTask,
+    s3_generic::cannonical_location::{download_openscrapers_object, upload_object},
+    tasks::ExecuteUserTask,
 };
+use tokio::sync::Semaphore;
 use tracing::{info, warn};
 
 use crate::{
     data_processing_traits::Revalidate,
     jurisdiction_schema_mapping::FixedJurisdiction,
     processing::{attachments::OpenscrapersExtraData, process_case},
-    sql_ingester_tasks::{database_author_association::*, dokito_sql_connection::get_dokito_pool},
+    sql_ingester_tasks::{
+        database_author_association::*, dokito_sql_connection::get_dokito_pool,
+        recreate_dokito_table_schema::delete_all_data,
+    },
 };
 
 #[derive(Clone, Copy, Deserialize, JsonSchema)]
@@ -98,7 +109,7 @@ pub async fn ingest_all_fixed_jurisdiction_data(
 
     // Drop all existing tables first
     if purge_data {
-        delete_all_data(pool).await?;
+        delete_all_data(fixed_jur, pool).await?;
         info!("Successfully deleted all old case data.");
     }
     // We can set this to always true since we just purged the dataset.
@@ -121,16 +132,14 @@ pub async fn ingest_all_fixed_jurisdiction_data(
     let cases_to_process_len = case_govids.len();
     info!(total_cases = %original_caselist_length, cases_to_process= %cases_to_process_len,"Filtered down original raw cases to a subset that is not present in the database.");
 
+    let max_simultaneous_cases = Semaphore::new(20);
     let execute_case_wraped = async |case_id: String| {
+        let _perm = max_simultaneous_cases.acquire().await;
         ingest_wrapped_fixed_jurisdiction_data(fixed_jur, &case_id, pool, ignore_existing).await
     };
+    let future_cases = case_govids.into_iter().map(execute_case_wraped);
+    let futures_count = join_all(future_cases).await.len();
 
-    // Create a stream of futures to fetch and ingest each case concurrently
-    let futures_count = stream::iter(case_govids)
-        .map(execute_case_wraped)
-        .buffer_unordered(20)
-        .count()
-        .await;
     info!(
         futures_count,
         "Successfully completed all sql ingest futures."
@@ -224,6 +233,12 @@ async fn ingest_wrapped_fixed_jurisdiction_data(
     }
 }
 
+fn generate_hash(x: &impl Hash) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    x.hash(&mut hasher);
+    hasher.finish()
+}
+
 pub async fn ingest_sql_case_with_retries(
     case: &mut ProcessedGenericDocket,
     fixed_jur: FixedJurisdiction,
@@ -231,11 +246,24 @@ pub async fn ingest_sql_case_with_retries(
     ignore_existing: bool,
     tries: usize,
 ) -> anyhow::Result<()> {
+    let initial_hash = generate_hash(&*case);
     let mut return_res = Ok(());
     let pg_schema = fixed_jur.get_postgres_schema_name();
     for remaining_tries in (0..tries).rev() {
         match ingest_sql_fixed_jurisdiction_case(case, fixed_jur, pool, ignore_existing).await {
-            Ok(val) => return Ok(val),
+            Ok(val) => {
+                let hash_post_upload = generate_hash(&*case);
+                if hash_post_upload != initial_hash {
+                    let s3_client = DIGITALOCEAN_S3.make_s3_client().await;
+                    let addr = DocketAddress {
+                        docket_govid: case.case_govid.to_string(),
+                        jurisdiction: fixed_jur.into(),
+                    };
+                    // If this doesnt work everything should still be okay
+                    let _ = upload_object(&s3_client, &addr, &*case).await;
+                }
+                return Ok(val);
+            }
             Err(err) => {
                 warn!(docket_govid=%case.case_govid, %remaining_tries,"Encountered error while processing docket, retrying.");
                 return_res = Err(err);
@@ -261,6 +289,15 @@ pub async fn ingest_sql_case_with_retries(
     return_res
 }
 
+pub fn bubble_error<T, E, I>(results: I) -> Result<(), E>
+where
+    I: IntoIterator<Item = Result<T, E>>,
+{
+    for res in results {
+        res?; // early-return on the first Err
+    }
+    Ok(())
+}
 pub async fn ingest_sql_fixed_jurisdiction_case(
     case: &mut ProcessedGenericDocket,
     fixed_jur: FixedJurisdiction,
@@ -318,26 +355,31 @@ pub async fn ingest_sql_fixed_jurisdiction_case(
         info!("Created new uuid for docket.")
     }
 
-    for petitioner in petitioner_list.iter_mut() {
-        upload_docket_petitioner_org_connection(petitioner, docket_uuid, fixed_jur, pool).await?;
-    }
+    let petitioner_futures = petitioner_list.iter_mut().map(async |petitioner| {
+        upload_docket_petitioner_org_connection(petitioner, docket_uuid, fixed_jur, pool).await
+    });
+    let petitioner_results = join_all(petitioner_futures).await;
+    bubble_error(petitioner_results.into_iter())?;
 
-    for party in case.case_parties.iter_mut() {
-        upload_docket_party_human_connection(party, docket_uuid, fixed_jur, pool).await?;
-    }
+    let party_futures = case.case_parties.iter_mut().map(async |party| {
+        upload_docket_party_human_connection(party, docket_uuid, fixed_jur, pool).await
+    });
+    let party_results = join_all(party_futures).await;
+    bubble_error(party_results)?;
 
-    for filling in case.filings.iter_mut() {
-        let individual_author_strings = filling
-            .individual_authors
-            .iter()
-            .map(|s| s.human_name.to_string())
-            .collect::<Vec<_>>();
-        let organization_author_strings = filling
-            .organization_authors
-            .iter()
-            .map(|s| s.truncated_org_name.to_string())
-            .collect::<Vec<_>>();
-        let filling_uuid: Uuid = query_scalar(
+    let process_filling_closure =
+        async |filling: &mut ProcessedGenericFiling| -> Result<(), anyhow::Error> {
+            let individual_author_strings = filling
+                .individual_authors
+                .iter()
+                .map(|s| s.human_name.to_string())
+                .collect::<Vec<_>>();
+            let organization_author_strings = filling
+                .organization_authors
+                .iter()
+                .map(|s| s.truncated_org_name.to_string())
+                .collect::<Vec<_>>();
+            let filling_uuid: Uuid = query_scalar(
             &format!("INSERT INTO {pg_schema}.fillings (uuid, docket_uuid, docket_govid, individual_author_strings, organization_author_strings, filed_date, filling_type, filling_name, filling_description, openscrapers_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
              ON CONFLICT (uuid) DO UPDATE SET
@@ -364,27 +406,29 @@ pub async fn ingest_sql_fixed_jurisdiction_case(
         .bind(filling.object_uuid.to_string())
         .fetch_one(pool)
         .await?;
-        if filling_uuid != filling.object_uuid {
-            info!(%filling_uuid, "Set filling to have new uuid");
-            filling.object_uuid = filling_uuid;
-        }
+            if filling_uuid != filling.object_uuid {
+                info!(%filling_uuid, "Set filling to have new uuid");
+                filling.object_uuid = filling_uuid;
+            }
 
-        // Associate individual authors using the proper association functions
-        for individual_author in filling.individual_authors.iter_mut() {
-            upload_filling_human_author(individual_author, filling_uuid, fixed_jur, pool).await?;
-        }
+            // Associate individual authors using the proper association functions
+            for individual_author in filling.individual_authors.iter_mut() {
+                upload_filling_human_author(individual_author, filling_uuid, fixed_jur, pool)
+                    .await?;
+            }
 
-        // Associate organization authors using the proper association functions
-        for org_author in filling.organization_authors.iter_mut() {
-            upload_filling_organization_author(org_author, filling_uuid, fixed_jur, pool).await?;
-        }
+            // Associate organization authors using the proper association functions
+            for org_author in filling.organization_authors.iter_mut() {
+                upload_filling_organization_author(org_author, filling_uuid, fixed_jur, pool)
+                    .await?;
+            }
 
-        for attachment in filling.attachments.iter_mut() {
-            let hashstr = attachment
-                .hash
-                .map(|h| h.to_string())
-                .unwrap_or_else(|| "".to_string());
-            let attachment_uuid: Uuid = query_scalar(
+            for attachment in filling.attachments.iter_mut() {
+                let hashstr = attachment
+                    .hash
+                    .map(|h| h.to_string())
+                    .unwrap_or_else(|| "".to_string());
+                let attachment_uuid: Uuid = query_scalar(
                 &format!("INSERT INTO {pg_schema}.attachments (uuid, parent_filling_uuid, blake2b_hash, attachment_file_extension, attachment_file_name, attachment_title, attachment_url, openscrapers_id)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                     ON CONFLICT (uuid) DO UPDATE SET
@@ -407,67 +451,21 @@ pub async fn ingest_sql_fixed_jurisdiction_case(
             .bind(&*attachment.object_uuid.to_string())
             .fetch_one(pool)
             .await?;
-            if attachment_uuid != attachment.object_uuid {
-                info!(%attachment_uuid, "Set attachment to have new uuid");
-                attachment.object_uuid = attachment_uuid;
+                if attachment_uuid != attachment.object_uuid {
+                    info!(%attachment_uuid, "Set attachment to have new uuid");
+                    attachment.object_uuid = attachment_uuid;
+                }
             }
-        }
-    }
+            Ok(())
+        };
+    let simultaneous_file_uploads = Semaphore::new(10);
+    let filling_futures = case.filings.iter_mut().map(async |filling| {
+        let _permit = simultaneous_file_uploads.acquire().await?;
+        process_filling_closure(filling).await
+    });
+    let filling_results = join_all(filling_futures).await;
+    bubble_error(filling_results.into_iter())?;
 
     tracing::info!(govid=%case.case_govid, uuid=%docket_uuid,"Successfully processed case with no errors");
-    Ok(())
-}
-
-pub async fn delete_all_data(pool: &PgPool) -> anyhow::Result<()> {
-    info!("Starting full data deletion...");
-
-    // Start a transaction
-    let mut tx = pool.begin().await?;
-
-    // Disable statement timeout just for this transaction
-    sqlx::query("SET LOCAL statement_timeout = 0;")
-        .execute(&mut *tx)
-        .await?;
-    info!("Disabled statement_timeout for this transaction");
-
-    // Drop relation tables first (with CASCADE)
-    info!("Deleting from fillings_filed_by_org_relation");
-    sqlx::query("TRUNCATE fillings_filed_by_org_relation CASCADE")
-        .execute(&mut *tx)
-        .await?;
-
-    info!("Deleting from fillings_on_behalf_of_org_relation");
-    sqlx::query("TRUNCATE fillings_on_behalf_of_org_relation CASCADE")
-        .execute(&mut *tx)
-        .await?;
-
-    // Attachments
-    info!("Deleting from attachments");
-    sqlx::query("TRUNCATE attachments CASCADE")
-        .execute(&mut *tx)
-        .await?;
-
-    // Organizations
-    info!("Deleting from organizations");
-    sqlx::query("TRUNCATE organizations CASCADE")
-        .execute(&mut *tx)
-        .await?;
-
-    // Fillings
-    info!("Deleting from fillings");
-    sqlx::query("TRUNCATE fillings CASCADE")
-        .execute(&mut *tx)
-        .await?;
-
-    // Dockets
-    info!("Deleting from dockets");
-    sqlx::query("TRUNCATE dockets CASCADE")
-        .execute(&mut *tx)
-        .await?;
-
-    // Commit once everything is successful
-    tx.commit().await?;
-    info!("All data deleted successfully ✅");
-
     Ok(())
 }
