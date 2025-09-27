@@ -3,18 +3,17 @@ use crate::{
     server::reprocess_all_handlers::download_dokito_cases_with_dates,
 };
 
-use aide::{self, axum::IntoApiResponse, transform::TransformOperation};
 use aws_sdk_s3::Client;
 use axum::{
     extract::Path,
-    response::{IntoResponse, Json},
+    response::Json,
 };
 use chrono::NaiveDate;
 use dokito_types::{
     env_vars::DIGITALOCEAN_S3,
     jurisdictions::JurisdictionInfo,
     processed::ProcessedGenericDocket,
-    raw::{RawDocketWithJurisdiction, RawGenericDocket},
+    raw::RawGenericDocket,
 };
 use futures::future::join_all;
 use non_empty_string::NonEmptyString;
@@ -25,7 +24,6 @@ use tokio::sync::Semaphore;
 use tracing::info;
 
 use crate::{
-    case_worker::ProcessCaseWithoutDownload,
     data_processing_traits::Revalidate,
     processing::{attachments::OpenscrapersExtraData, process_case},
     s3_stuff::{
@@ -37,7 +35,6 @@ use crate::{
     },
 };
 
-use mycorrhiza_common::tasks::{TaskStatusDisplay, workers::add_task_to_queue};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -108,7 +105,7 @@ fn filter_out_empty_strings(strings: Vec<String>) -> Vec<NonEmptyString> {
 #[derive(Clone)]
 enum RawDocketOrGovid {
     Govid(NonEmptyString),
-    RawInfo(RawGenericDocket),
+    RawInfo(Box<RawGenericDocket>),
 }
 
 impl From<NonEmptyString> for RawDocketOrGovid {
@@ -118,7 +115,7 @@ impl From<NonEmptyString> for RawDocketOrGovid {
 }
 impl From<RawGenericDocket> for RawDocketOrGovid {
     fn from(value: RawGenericDocket) -> Self {
-        RawDocketOrGovid::RawInfo(value)
+        RawDocketOrGovid::RawInfo(Box::new(value))
     }
 }
 
@@ -192,7 +189,7 @@ async fn execute_processing_single_action(
         }
     };
 
-    let final_upload = match action {
+    match action {
         ProcessingAction::IngestOnly | ProcessingAction::ProcessAndIngest => {
             info!(?gov_id, "Starting SQL ingestion");
             const TRIES: usize = 3;
@@ -213,7 +210,7 @@ async fn execute_processing_single_action(
     };
 
     info!(?gov_id, "Single docket processing completed successfully");
-    Ok(final_upload)
+    Ok(())
 }
 
 async fn execute_processing_action(

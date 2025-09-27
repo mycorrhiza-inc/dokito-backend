@@ -4,7 +4,7 @@ use chrono::{NaiveDate, Utc};
 use dokito_types::processed::ProcessedGenericHuman;
 use dokito_types::raw::RawArtificalPersonType;
 use futures::future::join_all;
-use futures::{FutureExt, join};
+use futures::join;
 use futures_util::{StreamExt, stream};
 use non_empty_string::NonEmptyString;
 use thiserror::Error;

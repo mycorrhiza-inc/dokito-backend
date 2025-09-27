@@ -30,6 +30,6 @@ pub fn get_dokito_pool() -> Result<&'static PgPool, InitializePostgresError> {
             let pool_ref = DOKITO_POOL_CELL.get_or_init(|| pool_value);
             Ok(pool_ref)
         }
-        Err(err) => Err(InitializePostgresError {}),
+        Err(_err) => Err(InitializePostgresError {}),
     }
 }

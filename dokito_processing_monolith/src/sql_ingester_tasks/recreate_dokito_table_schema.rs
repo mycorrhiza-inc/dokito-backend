@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
-use sqlx::{Executor, PgPool, migrate::Migrator};
+use sqlx::PgPool;
 use tracing::{info, warn};
 
 use mycorrhiza_common::tasks::ExecuteUserTask;

@@ -4,7 +4,6 @@ use crate::s3_stuff::make_s3_client;
 use async_trait::async_trait;
 use dokito_types::raw::RawDocketWithJurisdiction;
 use mycorrhiza_common::tasks::ExecuteUserTask;
-use serde_json::Value;
 
 #[repr(transparent)]
 pub struct ProcessCaseWithoutDownload(pub RawDocketWithJurisdiction);

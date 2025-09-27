@@ -14,7 +14,6 @@ use dokito_types::{
 };
 use futures::{
     future::join_all,
-    stream::{self, StreamExt},
 };
 use rand::{SeedableRng, rngs::SmallRng, seq::SliceRandom};
 use schemars::JsonSchema;
