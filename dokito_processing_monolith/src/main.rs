@@ -10,6 +10,7 @@ use tracing::info;
 
 use crate::{
     server::define_routes,
+    sql_ingester_tasks::dokito_sql_connection::get_dokito_pool,
     types::env_vars::{DIGITALOCEAN_S3, OPENSCRAPERS_S3_OBJECT_BUCKET},
 };
 use axum::extract::DefaultBodyLimit;
@@ -49,6 +50,7 @@ async fn main() -> anyhow::Result<()> {
     let _ = *DIGITALOCEAN_S3;
     let _ = *OPENSCRAPERS_S3_OBJECT_BUCKET;
     let _ = *DEEPINFRA_API_KEY;
+    let _ = get_dokito_pool().await?;
     if let Err(e) = do_i_have_internet() {
         tracing::error!(err = %e,"NO INTERNET DETECTED");
         panic!("NO INTERNET DETECTED");

@@ -47,7 +47,7 @@ impl ExecuteUserTask for RecreateDokitoTableSchema {
 pub async fn recreate_schema(fixed_jur: FixedJurisdiction) -> anyhow::Result<()> {
     let pg_schema = fixed_jur.get_postgres_schema_name();
     info!("Got request to recreate schema");
-    let pool = get_dokito_pool()?;
+    let pool = get_dokito_pool().await?;
     info!("Created pg pool");
 
     info!("Dropping existing tables");

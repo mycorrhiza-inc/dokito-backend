@@ -4,15 +4,10 @@ use crate::{
 };
 
 use aws_sdk_s3::Client;
-use axum::{
-    extract::Path,
-    response::Json,
-};
+use axum::{extract::Path, response::Json};
 use chrono::NaiveDate;
 use dokito_types::{
-    env_vars::DIGITALOCEAN_S3,
-    jurisdictions::JurisdictionInfo,
-    processed::ProcessedGenericDocket,
+    env_vars::DIGITALOCEAN_S3, jurisdictions::JurisdictionInfo, processed::ProcessedGenericDocket,
     raw::RawGenericDocket,
 };
 use futures::future::join_all;
@@ -34,7 +29,6 @@ use crate::{
         dokito_sql_connection::get_dokito_pool, nypuc_ingest::ingest_sql_case_with_retries,
     },
 };
-
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -67,13 +61,6 @@ pub struct ByDateRangeRequest {
     pub action: ProcessingAction,
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
-}
-
-#[derive(Debug, Serialize, JsonSchema, Default)]
-pub struct ProcessingResponse {
-    pub processed_dockets: Vec<ProcessedGenericDocket>,
-    pub success_count: usize,
-    pub error_count: usize,
 }
 
 // create a standard interface for handling all the possible ingest forms for the dockets. There
@@ -119,13 +106,36 @@ impl From<RawGenericDocket> for RawDocketOrGovid {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub enum CaseRawOrProcessed {
+    Processed(ProcessedGenericDocket),
+    Raw(RawGenericDocket),
+}
+impl From<ProcessedGenericDocket> for CaseRawOrProcessed {
+    fn from(value: ProcessedGenericDocket) -> Self {
+        Self::Processed(value)
+    }
+}
+
+impl From<RawGenericDocket> for CaseRawOrProcessed {
+    fn from(value: RawGenericDocket) -> Self {
+        Self::Raw(value)
+    }
+}
+
+#[derive(Debug, Serialize, JsonSchema, Default)]
+pub struct ProcessingResponse {
+    pub successfully_processed_dockets: Vec<CaseRawOrProcessed>,
+    pub success_count: usize,
+    pub error_count: usize,
+}
 async fn execute_processing_single_action(
     info: RawDocketOrGovid,
     action: ProcessingAction,
     fixed_jurisdiction: FixedJurisdiction,
     s3_client: &Client,
     pool: &PgPool,
-) -> Result<(), anyhow::Error> {
+) -> Result<CaseRawOrProcessed, anyhow::Error> {
     let gov_id = match &info {
         RawDocketOrGovid::Govid(govid) => govid.clone(),
         RawDocketOrGovid::RawInfo(raw) => raw.case_govid.clone(),
@@ -166,6 +176,7 @@ async fn execute_processing_single_action(
             };
             // Handles both fetching the cached s3 processed docket and uploading the result.
             let processed_docket = process_case(raw_docket, extra_data).await?;
+
             info!(?gov_id, "Successfully processed docket");
             processed_docket
         }
@@ -174,7 +185,9 @@ async fn execute_processing_single_action(
                 ?gov_id,
                 "Upload-only action completed, no further processing needed"
             );
-            return Ok(());
+            let raw_docket =
+                download_openscrapers_object::<RawGenericDocket>(s3_client, &docket_addr).await?;
+            return Ok(raw_docket.into());
         }
         ProcessingAction::IngestOnly => {
             info!(
@@ -205,12 +218,11 @@ async fn execute_processing_single_action(
         }
         _ => {
             info!(?gov_id, "No ingestion required for this action, completing");
-            return Ok(());
         }
     };
 
     info!(?gov_id, "Single docket processing completed successfully");
-    Ok(())
+    Ok(processed_docket.into())
 }
 
 async fn execute_processing_action(
@@ -219,7 +231,7 @@ async fn execute_processing_action(
     jurisdiction: JurisdictionInfo,
 ) -> Result<ProcessingResponse, String> {
     let s3_client = DIGITALOCEAN_S3.make_s3_client().await;
-    let pool = get_dokito_pool().map_err(|e| e.to_string())?;
+    let pool = get_dokito_pool().await.map_err(|e| e.to_string())?;
     let fixed_jurisdiction =
         FixedJurisdiction::try_from(&jurisdiction).map_err(|err| err.to_string())?;
 
@@ -230,26 +242,28 @@ async fn execute_processing_action(
     });
     let results = join_all(completion_futures).await;
 
-    let mut success_count = 0;
-    let mut error_count = 0;
+    let mut response = ProcessingResponse {
+        successfully_processed_dockets: vec![],
+        success_count: 0,
+        error_count: 0,
+    };
 
     for result in results {
         match result {
-            Ok(_) => success_count += 1,
+            Ok(data) => {
+                response.success_count += 1;
+                response.successfully_processed_dockets.push(data);
+            }
             Err(err) => {
-                error_count += 1;
+                response.error_count += 1;
                 info!(?err, "Processing failed for a docket");
             }
         }
     }
 
-    info!(success_count, error_count, "Completed processing batch");
+    info!(success_count= %response.success_count, error_count=%response.error_count, "Completed processing batch");
 
-    Ok(ProcessingResponse {
-        processed_dockets: vec![], // Not returning individual dockets for performance
-        success_count,
-        error_count,
-    })
+    Ok(response)
 }
 
 pub async fn raw_dockets_endpoint(
@@ -444,7 +458,9 @@ pub async fn manual_fully_process_dockets_right_now(
         .flatten() // This removes None values
         .collect();
 
-    let pool = get_dokito_pool().map_err(|_err| "Could not get database connection".to_string())?;
+    let pool = get_dokito_pool()
+        .await
+        .map_err(|_err| "Could not get database connection".to_string())?;
     info!("Database connection established");
 
     let tries = 3;

@@ -12,9 +12,7 @@ use dokito_types::{
     raw::RawGenericDocket,
     s3_stuff::{DocketAddress, list_raw_cases_for_jurisdiction},
 };
-use futures::{
-    future::join_all,
-};
+use futures::future::join_all;
 use rand::{SeedableRng, rngs::SmallRng, seq::SliceRandom};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -104,7 +102,7 @@ pub async fn ingest_all_fixed_jurisdiction_data(
 ) -> anyhow::Result<()> {
     info!("Got request to ingest all nypuc data.");
 
-    let pool = get_dokito_pool()?;
+    let pool = get_dokito_pool().await?;
     info!("Created pg pool");
 
     // Drop all existing tables first
@@ -265,7 +263,9 @@ pub async fn ingest_sql_case_with_retries(
                 return Ok(val);
             }
             Err(err) => {
-                warn!(docket_govid=%case.case_govid, %remaining_tries,"Encountered error while processing docket, retrying.");
+                let mut error_debug = format!("{:?}", &err);
+                error_debug.truncate(200);
+                warn!(docket_govid=%case.case_govid, %remaining_tries, %err, err_debug=%error_debug,"Encountered error while processing docket, retrying.");
                 return_res = Err(err);
                 let existing_docket: Option<Uuid> = query_scalar(&format!(
                     "SELECT uuid FROM {pg_schema}.dockets WHERE docket_govid = $1"

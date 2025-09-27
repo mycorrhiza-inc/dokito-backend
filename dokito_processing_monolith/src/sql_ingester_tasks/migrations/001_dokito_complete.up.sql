@@ -66,7 +66,7 @@ CREATE TABLE public.fillings (
   filling_govid text NOT NULL DEFAULT ''::text,
   openscrapers_id text NOT NULL UNIQUE,
   CONSTRAINT fillings_pkey PRIMARY KEY (uuid),
-  CONSTRAINT fillings_docket_uuid_fkey FOREIGN KEY (docket_uuid) REFERENCES public.dockets(uuid)
+  CONSTRAINT fillings_docket_uuid_fkey FOREIGN KEY (docket_uuid) REFERENCES public.dockets(uuid) ON UPDATE CASCADE ON DELETE CASCADE
 );
 ALTER TABLE public.fillings ENABLE ROW LEVEL SECURITY;
 
@@ -85,7 +85,7 @@ CREATE TABLE public.attachments (
   attachment_url text NOT NULL DEFAULT ''::text,
   openscrapers_id text NOT NULL UNIQUE,
   CONSTRAINT attachments_pkey PRIMARY KEY (uuid),
-  CONSTRAINT attachments_parent_filling_uuid_fkey FOREIGN KEY (parent_filling_uuid) REFERENCES public.fillings(uuid)
+  CONSTRAINT attachments_parent_filling_uuid_fkey FOREIGN KEY (parent_filling_uuid) REFERENCES public.fillings(uuid) ON UPDATE CASCADE ON DELETE CASCADE
 );
 ALTER TABLE public.attachments ENABLE ROW LEVEL SECURITY;
 
@@ -96,8 +96,8 @@ CREATE TABLE public.docket_petitioned_by_org (
   docket_uuid uuid NOT NULL DEFAULT gen_random_uuid(),
   petitioner_uuid uuid NOT NULL DEFAULT gen_random_uuid(),
   CONSTRAINT docket_petitioned_by_org_pkey PRIMARY KEY (uuid),
-  CONSTRAINT fk_docket_petitioned_by_org_docket_uuid FOREIGN KEY (docket_uuid) REFERENCES public.dockets(uuid),
-  CONSTRAINT fk_docket_petitioned_by_org_petitioner_uuid FOREIGN KEY (petitioner_uuid) REFERENCES public.organizations(uuid)
+  CONSTRAINT fk_docket_petitioned_by_org_docket_uuid FOREIGN KEY (docket_uuid) REFERENCES public.dockets(uuid) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_docket_petitioned_by_org_petitioner_uuid FOREIGN KEY (petitioner_uuid) REFERENCES public.organizations(uuid) ON UPDATE CASCADE ON DELETE CASCADE
 );
 ALTER TABLE public.docket_petitioned_by_org ENABLE ROW LEVEL SECURITY;
 
@@ -108,22 +108,11 @@ CREATE TABLE public.fillings_filed_by_individual (
   human_uuid uuid NOT NULL,
   filling_uuid uuid NOT NULL,
   CONSTRAINT fillings_filed_by_individual_pkey PRIMARY KEY (uuid),
-  CONSTRAINT fillings_filed_by_individual_human_uuid_fkey FOREIGN KEY (human_uuid) REFERENCES public.humans(uuid),
-  CONSTRAINT fillings_filed_by_individual_filling_uuid_fkey FOREIGN KEY (filling_uuid) REFERENCES public.fillings(uuid)
+  CONSTRAINT fillings_filed_by_individual_human_uuid_fkey FOREIGN KEY (human_uuid) REFERENCES public.humans(uuid) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fillings_filed_by_individual_filling_uuid_fkey FOREIGN KEY (filling_uuid) REFERENCES public.fillings(uuid) ON UPDATE CASCADE ON DELETE CASCADE
 );
 ALTER TABLE public.fillings_filed_by_individual ENABLE ROW LEVEL SECURITY;
 
--- Fillings filed by org relation
-CREATE TABLE public.fillings_filed_by_org_relation (
-  uuid uuid NOT NULL DEFAULT gen_random_uuid(),
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  filling_uuid uuid NOT NULL,
-  organization_uuid uuid NOT NULL,
-  CONSTRAINT fillings_filed_by_org_relation_pkey PRIMARY KEY (uuid),
-  CONSTRAINT fillings_filed_by_org_relation_organization_uuid_fkey FOREIGN KEY (organization_uuid) REFERENCES public.organizations(uuid),
-  CONSTRAINT fillings_filed_by_org_relation_filling_uuid_fkey FOREIGN KEY (filling_uuid) REFERENCES public.fillings(uuid)
-);
-ALTER TABLE public.fillings_filed_by_org_relation ENABLE ROW LEVEL SECURITY;
 
 -- Fillings on behalf of org relation
 CREATE TABLE public.fillings_on_behalf_of_org_relation (
@@ -132,8 +121,8 @@ CREATE TABLE public.fillings_on_behalf_of_org_relation (
   filling_uuid uuid NOT NULL DEFAULT gen_random_uuid(),
   author_organization_uuid uuid NOT NULL DEFAULT gen_random_uuid(),
   CONSTRAINT fillings_on_behalf_of_org_relation_pkey PRIMARY KEY (relation_uuid),
-  CONSTRAINT fillings_organization_authors_rel_author_organization_uuid_fkey FOREIGN KEY (author_organization_uuid) REFERENCES public.organizations(uuid),
-  CONSTRAINT fillings_organization_authors_relation_filling_uuid_fkey FOREIGN KEY (filling_uuid) REFERENCES public.fillings(uuid)
+  CONSTRAINT fillings_organization_authors_rel_author_organization_uuid_fkey FOREIGN KEY (author_organization_uuid) REFERENCES public.organizations(uuid) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fillings_organization_authors_relation_filling_uuid_fkey FOREIGN KEY (filling_uuid) REFERENCES public.fillings(uuid) ON UPDATE CASCADE ON DELETE CASCADE
 );
 ALTER TABLE public.fillings_on_behalf_of_org_relation ENABLE ROW LEVEL SECURITY;
 
@@ -148,9 +137,9 @@ CREATE TABLE public.individual_offical_party_to_docket (
   party_phone_contact text NOT NULL,
   employed_by_org uuid,
   CONSTRAINT individual_offical_party_to_docket_pkey PRIMARY KEY (uuid),
-  CONSTRAINT individual_offical_party_to_docket_employed_by_org_fkey FOREIGN KEY (employed_by_org) REFERENCES public.organizations(uuid),
-  CONSTRAINT individual_offical_party_to_docket_docket_uuid_fkey FOREIGN KEY (docket_uuid) REFERENCES public.dockets(uuid),
-  CONSTRAINT individual_offical_party_to_docket_individual_uuid_fkey FOREIGN KEY (individual_uuid) REFERENCES public.humans(uuid),
-  CONSTRAINT individual_offical_party_to_docket_representing_org_uuid_fkey FOREIGN KEY (representing_org_uuid) REFERENCES public.organizations(uuid)
+  CONSTRAINT individual_offical_party_to_docket_employed_by_org_fkey FOREIGN KEY (employed_by_org) REFERENCES public.organizations(uuid) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT individual_offical_party_to_docket_docket_uuid_fkey FOREIGN KEY (docket_uuid) REFERENCES public.dockets(uuid) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT individual_offical_party_to_docket_individual_uuid_fkey FOREIGN KEY (individual_uuid) REFERENCES public.humans(uuid) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT individual_offical_party_to_docket_representing_org_uuid_fkey FOREIGN KEY (representing_org_uuid) REFERENCES public.organizations(uuid) ON UPDATE CASCADE ON DELETE CASCADE
 );
 ALTER TABLE public.individual_offical_party_to_docket ENABLE ROW LEVEL SECURITY;
