@@ -1,4 +1,8 @@
-use std::{collections::HashSet, mem::take};
+use std::{
+    collections::HashSet,
+    hash::{DefaultHasher, Hash, Hasher},
+    mem::take,
+};
 
 use async_trait::async_trait;
 use dokito_types::{
@@ -19,7 +23,8 @@ use serde_json::Value;
 use sqlx::{PgPool, Pool, Postgres, query_scalar, types::Uuid};
 
 use mycorrhiza_common::{
-    s3_generic::cannonical_location::download_openscrapers_object, tasks::ExecuteUserTask,
+    s3_generic::cannonical_location::{download_openscrapers_object, upload_object},
+    tasks::ExecuteUserTask,
 };
 use tokio::sync::Semaphore;
 use tracing::{info, warn};
@@ -229,6 +234,12 @@ async fn ingest_wrapped_fixed_jurisdiction_data(
     }
 }
 
+fn generate_hash(x: &impl Hash) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    x.hash(&mut hasher);
+    hasher.finish()
+}
+
 pub async fn ingest_sql_case_with_retries(
     case: &mut ProcessedGenericDocket,
     fixed_jur: FixedJurisdiction,
@@ -236,11 +247,24 @@ pub async fn ingest_sql_case_with_retries(
     ignore_existing: bool,
     tries: usize,
 ) -> anyhow::Result<()> {
+    let initial_hash = generate_hash(&*case);
     let mut return_res = Ok(());
     let pg_schema = fixed_jur.get_postgres_schema_name();
     for remaining_tries in (0..tries).rev() {
         match ingest_sql_fixed_jurisdiction_case(case, fixed_jur, pool, ignore_existing).await {
-            Ok(val) => return Ok(val),
+            Ok(val) => {
+                let hash_post_upload = generate_hash(&*case);
+                if hash_post_upload != initial_hash {
+                    let s3_client = DIGITALOCEAN_S3.make_s3_client().await;
+                    let addr = DocketAddress {
+                        docket_govid: case.case_govid.to_string(),
+                        jurisdiction: fixed_jur.into(),
+                    };
+                    // If this doesnt work everything should still be okay
+                    let _ = upload_object(&s3_client, &addr, &*case).await;
+                }
+                return Ok(val);
+            }
             Err(err) => {
                 warn!(docket_govid=%case.case_govid, %remaining_tries,"Encountered error while processing docket, retrying.");
                 return_res = Err(err);

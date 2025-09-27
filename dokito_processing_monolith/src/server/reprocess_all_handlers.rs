@@ -93,12 +93,16 @@ async fn get_initial_govid_list_to_process(
     Ok(raw_govid_map.into_iter().collect())
 }
 
-pub async fn download_dokito_cases_with_dates() -> anyhow::Result<BTreeMap<NaiveDate, String>> {
+pub async fn download_dokito_cases_with_dates(
+    fixed_jur: FixedJurisdiction,
+) -> anyhow::Result<BTreeMap<NaiveDate, String>> {
     let pool = get_dokito_pool()?;
-    let results =
-        query_as::<_, DocketResult>("SELECT docket_govid, opened_date FROM public.dockets")
-            .fetch_all(pool)
-            .await?;
+    let pg_schema = fixed_jur.get_jurisdiction_info_name();
+    let results = query_as::<_, DocketResult>(&format!(
+        "SELECT docket_govid, opened_date FROM {pg_schema}.dockets"
+    ))
+    .fetch_all(pool)
+    .await?;
     let bmap = results
         .into_iter()
         .map(|val| (val.opened_date, val.docket_govid))
@@ -111,8 +115,9 @@ pub async fn handle_download_all_missing_hashes_newest(
     Json(payload): Json<JurisdictionInfo>,
 ) -> Result<String, String> {
     info!("Downloading all hashes starting from newest.");
+    let fixed_jur = FixedJurisdiction::try_from(&payload).map_err(|e| e.to_string())?;
     let s3_client = make_s3_client().await;
-    let cases_with_dates = download_dokito_cases_with_dates()
+    let cases_with_dates = download_dokito_cases_with_dates(fixed_jur)
         .await
         .map_err(|e| e.to_string())?;
     let caselist: Vec<String> = cases_with_dates
