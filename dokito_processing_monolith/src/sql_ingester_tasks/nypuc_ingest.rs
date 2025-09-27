@@ -355,13 +355,16 @@ pub async fn ingest_sql_fixed_jurisdiction_case(
         info!("Created new uuid for docket.")
     }
 
+    let simultaneous_party_and_individuals = Semaphore::new(4);
     let petitioner_futures = petitioner_list.iter_mut().map(async |petitioner| {
+        let _permit = simultaneous_party_and_individuals.acquire().await;
         upload_docket_petitioner_org_connection(petitioner, docket_uuid, fixed_jur, pool).await
     });
     let petitioner_results = join_all(petitioner_futures).await;
     bubble_error(petitioner_results.into_iter())?;
 
     let party_futures = case.case_parties.iter_mut().map(async |party| {
+        let _permit = simultaneous_party_and_individuals.acquire().await;
         upload_docket_party_human_connection(party, docket_uuid, fixed_jur, pool).await
     });
     let party_results = join_all(party_futures).await;
@@ -458,7 +461,7 @@ pub async fn ingest_sql_fixed_jurisdiction_case(
             }
             Ok(())
         };
-    let simultaneous_file_uploads = Semaphore::new(10);
+    let simultaneous_file_uploads = Semaphore::new(3);
     let filling_futures = case.filings.iter_mut().map(async |filling| {
         let _permit = simultaneous_file_uploads.acquire().await?;
         process_filling_closure(filling).await
