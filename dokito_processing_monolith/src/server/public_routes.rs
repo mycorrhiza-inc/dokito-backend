@@ -13,8 +13,8 @@ use crate::{indexes::attachment_url_index::handle_attachment_url_lookup, server:
 pub fn create_public_router() -> ApiRouter {
     ApiRouter::new()
         .api_route(
-            "/cases/{state}/{jurisdiction_name}/{case_name}",
-            get(s3_routes::handle_processed_case_filing_from_s3),
+            "/debug_case/{state}/{jurisdiction_name}/{docket_govid}",
+            get(s3_routes::handle_case_debug_info),
         )
         .api_route(
             "/caselist/{state}/{jurisdiction_name}/all",

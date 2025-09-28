@@ -1,9 +1,12 @@
 use aide::{self, axum::IntoApiResponse, transform::TransformOperation};
 use axum::{
+    debug_handler,
     extract::Path,
     http::HeaderValue,
     response::{IntoResponse, Json},
 };
+use dokito_types::{env_vars::DIGITALOCEAN_S3, raw::RawGenericDocket};
+use futures::join;
 use hyper::{StatusCode, body::Bytes, header};
 use mycorrhiza_common::{
     hash::Blake2bHash,
@@ -14,13 +17,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::str::FromStr;
 use tracing::{error, info};
+use uuid::Uuid;
 
 use crate::{
     data_processing_traits::Revalidate,
+    jurisdiction_schema_mapping::FixedJurisdiction,
     s3_stuff::{
         DocketAddress, delete_openscrapers_s3_object, download_openscrapers_object,
         get_jurisdiction_prefix, list_processed_cases_for_jurisdiction, upload_object,
     },
+    sql_ingester_tasks::dokito_sql_connection::get_dokito_pool,
     types::{
         attachments::RawAttachment, env_vars::OPENSCRAPERS_S3_OBJECT_BUCKET,
         jurisdictions::JurisdictionInfo, processed::ProcessedGenericDocket,
@@ -99,22 +105,71 @@ pub fn write_s3_file_docs(op: TransformOperation) -> TransformOperation {
         .response_with::<500, String, _>(|res| res.description("Error writing file to S3."))
 }
 
-#[derive(Deserialize, JsonSchema)]
-pub struct CasePath {
+#[derive(Clone, Deserialize, JsonSchema)]
+pub struct DocketPath {
     /// The state of the jurisdiction.
     state: String,
     /// The name of the jurisdiction.
     jurisdiction_name: String,
     /// The name of the case.
-    case_name: String,
+    docket_govid: String,
+}
+
+#[derive(Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DocketDebugInfo {
+    pub docket_govid: String,
+    pub jurisdiction_info: JurisdictionInfo,
+    pub postgres_schema_name: String,
+    pub postgres_uuid: Option<Uuid>,
+    pub processed_docket: Option<ProcessedGenericDocket>,
+    pub raw_docket: Option<RawGenericDocket>,
+}
+
+#[debug_handler]
+pub async fn handle_case_debug_info(
+    Path(DocketPath {
+        state,
+        jurisdiction_name,
+        docket_govid,
+    }): Path<DocketPath>,
+) -> Result<Json<DocketDebugInfo>, String> {
+    let s3_client = DIGITALOCEAN_S3.make_s3_client().await;
+    let jurisdiction_info = JurisdictionInfo::new_usa(&jurisdiction_name, &state);
+    let fixed_jur = FixedJurisdiction::try_from(&jurisdiction_info).map_err(|e| e.to_string())?;
+    let addr_info = DocketAddress {
+        jurisdiction: jurisdiction_info.clone(),
+        docket_govid: docket_govid.clone(),
+    };
+    let pg_schema = fixed_jur.get_postgres_schema_name();
+    let pool = get_dokito_pool().await.map_err(|e| e.to_string())?;
+    let processed_docket_future =
+        download_openscrapers_object::<ProcessedGenericDocket>(&s3_client, &addr_info);
+    let raw_docket_option =
+        download_openscrapers_object::<RawGenericDocket>(&s3_client, &addr_info);
+    let query_string = format!("SELECT uuid FROM {pg_schema}.dockets WHERE docket_govid = $1");
+    let pg_future = sqlx::query_scalar::<_, Uuid>(&query_string)
+        .bind(&docket_govid)
+        .fetch_optional(pool);
+    let (proc_docket, raw_docket, pg_result) =
+        join!(processed_docket_future, raw_docket_option, pg_future);
+    let docket_pg_uuid = pg_result.map_err(|e| e.to_string())?;
+    let response = DocketDebugInfo {
+        docket_govid,
+        jurisdiction_info,
+        postgres_schema_name: pg_schema.to_string(),
+        processed_docket: proc_docket.ok(),
+        raw_docket: raw_docket.ok(),
+        postgres_uuid: docket_pg_uuid,
+    };
+    Ok(Json(response))
 }
 
 pub async fn handle_processed_case_filing_from_s3(
-    Path(CasePath {
+    Path(DocketPath {
         state,
         jurisdiction_name,
-        case_name,
-    }): Path<CasePath>,
+        docket_govid: case_name,
+    }): Path<DocketPath>,
 ) -> Result<Json<ProcessedGenericDocket>, String> {
     info!(state = %state, jurisdiction = %jurisdiction_name, case = %case_name, "Request received for case filing");
     let s3_client = crate::s3_stuff::make_s3_client().await;
@@ -142,11 +197,11 @@ pub async fn handle_processed_case_filing_from_s3(
 }
 
 pub async fn delete_case_filing_from_s3(
-    Path(CasePath {
+    Path(DocketPath {
         state,
         jurisdiction_name,
-        case_name,
-    }): Path<CasePath>,
+        docket_govid: case_name,
+    }): Path<DocketPath>,
 ) -> impl IntoApiResponse {
     info!(state = %state, jurisdiction = %jurisdiction_name, case = %case_name, "Request received to delete case filing");
     let s3_client = crate::s3_stuff::make_s3_client().await;
