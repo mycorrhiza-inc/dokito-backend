@@ -2,7 +2,7 @@ use std::convert::Infallible;
 
 use chrono::{NaiveDate, Utc};
 use dokito_types::processed::ProcessedGenericHuman;
-use dokito_types::raw::RawArtificalPersonType;
+use dokito_types::raw::{RawArtificalPersonType, RawGenericParty};
 use futures::future::join_all;
 use futures::join;
 use futures_util::{StreamExt, stream};
@@ -38,7 +38,7 @@ impl Revalidate for ProcessedGenericDocket {
             did_change = RevalidationOutcome::DidChange
         }
         if self.case_subtype.is_empty() {
-            let x = self.case_type.split("-").collect::<Vec<_>>();
+            let x = self.case_type.split(" - ").collect::<Vec<_>>();
             if x.len() == 2 {
                 let case_type = x[0].trim().to_string();
                 let case_subtype = x[1].trim().to_string();
@@ -155,52 +155,119 @@ impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
         // 10,000 fillings, but it can process 60 dockets at the same time with one filling each.
         let mut processed_fillings = join_all(processed_fillings_futures).await;
 
-        let parties = input.case_parties;
-        let mut case_parties = vec![];
-        for rawparty in parties {
-            if rawparty.artifical_person_type != RawArtificalPersonType::Human
-                && let Ok(human_name) = NonEmptyString::try_from(rawparty.name)
-            {
-                let docket_govid = input.case_govid.as_str();
-                tracing::error!(
-                    docket_govid,
-                    "Support for adding non human case parties is not supported right now, go ahead and maybe try inputing it as a petitioner."
-                );
-                let processed_party_huamn = ProcessedGenericHuman {
-                    object_uuid: Uuid::nil(),
-                    human_name,
-                    western_first_name: rawparty.western_human_first_name,
-                    western_last_name: rawparty.western_human_last_name,
-                    contact_emails: vec![rawparty.contact_email],
-                    contact_phone_numbers: vec![rawparty.contact_phone],
-                    contact_addresses: vec![rawparty.contact_address],
-                    representing_company: None,
-                    employed_by: None,
-                    title: rawparty.human_title,
-                };
-                case_parties.push(processed_party_huamn)
+        fn parse_first_name_and_title(raw_first_name: &str) -> (String, String) {
+            let trimmed = raw_first_name.trim();
+            let capitals: Vec<(usize, char)> = trimmed
+                .char_indices()
+                .filter(|(_, c)| c.is_uppercase())
+                .collect();
+
+            if capitals.len() > 2 {
+                // Split on the second capital letter
+                let split_pos = capitals[1].0;
+                let first_name = trimmed[..split_pos].trim().to_string();
+                let title = trimmed[split_pos..].trim().to_string();
+                (first_name, title)
+            } else {
+                (trimmed.to_string(), String::new())
             }
         }
+
+        fn clean_last_name(raw_last_name: &str) -> String {
+            raw_last_name
+                .trim()
+                .trim_end_matches(',')
+                .trim()
+                .to_string()
+        }
+        fn raw_party_to_human(rawparty: RawGenericParty) -> Option<ProcessedGenericHuman> {
+            let raw_name = &*rawparty.name;
+
+            // Case 1: not human
+            if rawparty.artifical_person_type != RawArtificalPersonType::Human {
+                let party_type = rawparty.artifical_person_type;
+                warn!(?party_type, %raw_name, "Encountered non-human party, skipping.");
+                return None;
+            }
+
+            // Case 2: human but name is invalid
+            let Ok(nonempty_name) = NonEmptyString::try_from(raw_name.to_string()) else {
+                let party_type = rawparty.artifical_person_type;
+                let first_name = &*rawparty.western_human_first_name;
+                let last_name = &*rawparty.western_human_last_name;
+                warn!(
+                    ?party_type,
+                    %raw_name,
+                    %first_name,
+                    %last_name,
+                    "Encountered human with invalid or missing name."
+                );
+                return None;
+            };
+
+            let (clean_first_name, extracted_title) =
+                parse_first_name_and_title(&rawparty.western_human_first_name);
+            let clean_last_name = clean_last_name(&rawparty.western_human_last_name);
+
+            let final_title =
+                if rawparty.human_title.trim().is_empty() && !extracted_title.is_empty() {
+                    extracted_title
+                } else {
+                    rawparty.human_title
+                };
+
+            let processed_party_huamn = ProcessedGenericHuman {
+                object_uuid: Uuid::nil(),
+                human_name: nonempty_name,
+                western_first_name: clean_first_name,
+                western_last_name: clean_last_name,
+                contact_emails: vec![rawparty.contact_email],
+                contact_phone_numbers: vec![rawparty.contact_phone],
+                contact_addresses: vec![rawparty.contact_address],
+                representing_company: None,
+                employed_by: None,
+                title: final_title,
+            };
+            Some(processed_party_huamn)
+        }
+        let actual_industry = if input.industry.starts_with("Matter Number:") {
+            "".to_string()
+        } else {
+            input.industry
+        };
+        let raw_parties = input.case_parties;
+        let raw_parties_length = raw_parties.len();
+        tracing::info!(%raw_parties_length,"Raw Case has a certain amount of input.case_parites");
+
+        let processed_parties = raw_parties
+            .into_iter()
+            .filter_map(raw_party_to_human)
+            .collect::<Vec<_>>();
+        tracing::info!(case_parties_length = %processed_parties.len(),"Processed parties has final length");
+        assert_eq!(
+            raw_parties_length,
+            processed_parties.len(),
+            "raw parties should have the same length as the final parties"
+        );
         processed_fillings.sort_by_key(|v| v.index_in_docket);
         let llmed_petitioner_list = split_and_fix_organization_names_blob(&input.petitioner).await;
         let final_processed_docket = ProcessedGenericDocket {
             object_uuid,
-            case_parties,
+            case_parties: processed_parties,
             processed_at: Utc::now(),
-            case_govid: input.case_govid.clone(),
+            case_govid: input.case_govid,
             filings: processed_fillings,
             opened_date: opened_date_from_fillings,
-            case_name: input.case_name.clone(),
-            case_url: input.case_url.clone(),
-            industry: input.industry.clone(),
-            case_type: input.case_type.clone(),
-            case_subtype: input.case_subtype.clone(),
+            case_name: input.case_name,
+            case_url: input.case_url,
+            industry: actual_industry,
+            case_type: input.case_type,
+            case_subtype: input.case_subtype,
             indexed_at: input.indexed_at,
             closed_date: input.closed_date,
-            description: input.description.clone(),
-            // Super hacky workaround until I can change the input type.
-            extra_metadata: input.extra_metadata.clone().into_iter().collect(),
-            hearing_officer: input.hearing_officer.clone(),
+            description: input.description,
+            extra_metadata: input.extra_metadata,
+            hearing_officer: input.hearing_officer,
             petitioner_list: llmed_petitioner_list,
         };
         Ok(final_processed_docket)
