@@ -96,7 +96,7 @@ async fn get_initial_govid_list_to_process(
 pub async fn download_dokito_cases_with_dates(
     fixed_jur: FixedJurisdiction,
 ) -> anyhow::Result<BTreeMap<NaiveDate, String>> {
-    let pool = get_dokito_pool()?;
+    let pool = get_dokito_pool().await.unwrap();
     let pg_schema = fixed_jur.get_jurisdiction_info_name();
     let results = query_as::<_, DocketResult>(&format!(
         "SELECT docket_govid, opened_date FROM {pg_schema}.dockets"

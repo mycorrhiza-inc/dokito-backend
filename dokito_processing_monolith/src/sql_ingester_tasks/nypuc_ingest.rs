@@ -12,9 +12,7 @@ use dokito_types::{
     raw::RawGenericDocket,
     s3_stuff::{DocketAddress, list_raw_cases_for_jurisdiction},
 };
-use futures::{
-    future::join_all,
-};
+use futures::future::join_all;
 use rand::{SeedableRng, rngs::SmallRng, seq::SliceRandom};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -104,7 +102,7 @@ pub async fn ingest_all_fixed_jurisdiction_data(
 ) -> anyhow::Result<()> {
     info!("Got request to ingest all nypuc data.");
 
-    let pool = get_dokito_pool()?;
+    let pool = get_dokito_pool().await?;
     info!("Created pg pool");
 
     // Drop all existing tables first
@@ -265,7 +263,9 @@ pub async fn ingest_sql_case_with_retries(
                 return Ok(val);
             }
             Err(err) => {
-                warn!(docket_govid=%case.case_govid, %remaining_tries,"Encountered error while processing docket, retrying.");
+                let mut error_debug = format!("{:?}", &err);
+                error_debug.truncate(200);
+                warn!(docket_govid=%case.case_govid, %remaining_tries, %err, err_debug=%error_debug,"Encountered error while processing docket, retrying.");
                 return_res = Err(err);
                 let existing_docket: Option<Uuid> = query_scalar(&format!(
                     "SELECT uuid FROM {pg_schema}.dockets WHERE docket_govid = $1"
@@ -355,13 +355,16 @@ pub async fn ingest_sql_fixed_jurisdiction_case(
         info!("Created new uuid for docket.")
     }
 
+    let simultaneous_party_and_individuals = Semaphore::new(4);
     let petitioner_futures = petitioner_list.iter_mut().map(async |petitioner| {
+        let _permit = simultaneous_party_and_individuals.acquire().await;
         upload_docket_petitioner_org_connection(petitioner, docket_uuid, fixed_jur, pool).await
     });
     let petitioner_results = join_all(petitioner_futures).await;
     bubble_error(petitioner_results.into_iter())?;
 
     let party_futures = case.case_parties.iter_mut().map(async |party| {
+        let _permit = simultaneous_party_and_individuals.acquire().await;
         upload_docket_party_human_connection(party, docket_uuid, fixed_jur, pool).await
     });
     let party_results = join_all(party_futures).await;
@@ -458,7 +461,7 @@ pub async fn ingest_sql_fixed_jurisdiction_case(
             }
             Ok(())
         };
-    let simultaneous_file_uploads = Semaphore::new(10);
+    let simultaneous_file_uploads = Semaphore::new(3);
     let filling_futures = case.filings.iter_mut().map(async |filling| {
         let _permit = simultaneous_file_uploads.acquire().await?;
         process_filling_closure(filling).await
