@@ -239,11 +239,16 @@ impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
         let raw_parties_length = raw_parties.len();
         tracing::info!(%raw_parties_length,"Raw Case has a certain amount of input.case_parites");
 
-        let processed_parties = raw_parties
+        let mut processed_parties = raw_parties
             .into_iter()
             .filter_map(raw_party_to_human)
             .collect::<Vec<_>>();
         tracing::info!(case_parties_length = %processed_parties.len(),"Processed parties has final length");
+        let pool = get_dokito_pool().await.unwrap();
+
+        for party in processed_parties.iter_mut() {
+            let _res = associate_individual_author_with_name(party, fixed_jurisdiction, pool).await;
+        }
         assert_eq!(
             raw_parties_length,
             processed_parties.len(),
