@@ -13,10 +13,6 @@ use crate::server::temporary_routes::define_temporary_routes;
 
 pub fn create_admin_router() -> ApiRouter {
     let admin_routes = ApiRouter::new()
-        .api_route(
-            "/cases/{state}/{jurisdiction_name}/manual_process_raw_dockets",
-            post(queue_routes::manual_fully_process_dockets_right_now),
-        )
         .api_route("/cases/reprocess_dockets_for_all", post(reprocess_dockets))
         .api_route(
             "/direct_file_attachment_process",
