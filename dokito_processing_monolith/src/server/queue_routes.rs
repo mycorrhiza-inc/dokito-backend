@@ -19,7 +19,6 @@ use tokio::sync::Semaphore;
 use tracing::info;
 
 use crate::{
-    data_processing_traits::Revalidate,
     processing::{attachments::OpenscrapersExtraData, process_case},
     s3_stuff::{
         DocketAddress, download_openscrapers_object, list_raw_cases_for_jurisdiction, upload_object,
@@ -30,8 +29,7 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy)]
 pub enum ProcessingAction {
     ProcessOnly,
     IngestOnly,
@@ -39,26 +37,62 @@ pub enum ProcessingAction {
     UploadRaw,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProcessingActionRawData {
+    ProcessOnly,
+    ProcessAndIngest,
+    UploadRaw,
+}
+
+impl From<ProcessingActionRawData> for ProcessingAction {
+    fn from(value: ProcessingActionRawData) -> Self {
+        match value {
+            ProcessingActionRawData::ProcessOnly => Self::ProcessOnly,
+            ProcessingActionRawData::ProcessAndIngest => Self::ProcessAndIngest,
+            ProcessingActionRawData::UploadRaw => Self::UploadRaw,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProcessingActionIdOnly {
+    ProcessOnly,
+    IngestOnly,
+    ProcessAndIngest,
+}
+
+impl From<ProcessingActionIdOnly> for ProcessingAction {
+    fn from(value: ProcessingActionIdOnly) -> Self {
+        match value {
+            ProcessingActionIdOnly::ProcessOnly => Self::ProcessOnly,
+            ProcessingActionIdOnly::IngestOnly => Self::IngestOnly,
+            ProcessingActionIdOnly::ProcessAndIngest => Self::ProcessAndIngest,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct RawDocketsRequest {
-    pub action: ProcessingAction,
+    pub action: ProcessingActionRawData,
     pub dockets: Vec<RawGenericDocket>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ByIdsRequest {
-    pub action: ProcessingAction,
+    pub action: ProcessingActionIdOnly,
     pub docket_ids: Vec<NonEmptyString>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ByJurisdictionRequest {
-    pub action: ProcessingAction,
+    pub action: ProcessingActionIdOnly,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ByDateRangeRequest {
-    pub action: ProcessingAction,
+    pub action: ProcessingActionIdOnly,
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
 }
@@ -288,7 +322,7 @@ pub async fn raw_dockets_endpoint(
         .into_iter()
         .map(RawDocketOrGovid::from)
         .collect();
-    let response = execute_processing_action(raw_list, request.action, jurisdiction).await?;
+    let response = execute_processing_action(raw_list, request.action.into(), jurisdiction).await?;
     Ok(Json(response))
 }
 
@@ -313,7 +347,8 @@ pub async fn by_ids_endpoint(
         .into_iter()
         .map(RawDocketOrGovid::from)
         .collect();
-    let response = execute_processing_action(docid_info, request.action, jurisdiction).await?;
+    let response =
+        execute_processing_action(docid_info, request.action.into(), jurisdiction).await?;
     Ok(Json(response))
 }
 
@@ -348,7 +383,8 @@ pub async fn by_jurisdiction_endpoint(
         .into_iter()
         .map(RawDocketOrGovid::from)
         .collect();
-    let response = execute_processing_action(docid_info, request.action, jurisdiction).await?;
+    let response =
+        execute_processing_action(docid_info, request.action.into(), jurisdiction).await?;
     Ok(Json(response))
 }
 
@@ -393,6 +429,7 @@ pub async fn by_daterange_endpoint(
         .map(RawDocketOrGovid::from)
         .collect();
 
-    let response = execute_processing_action(docid_info, request.action, jurisdiction).await?;
+    let response =
+        execute_processing_action(docid_info, request.action.into(), jurisdiction).await?;
     Ok(Json(response))
 }

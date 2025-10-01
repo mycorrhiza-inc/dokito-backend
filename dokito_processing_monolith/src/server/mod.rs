@@ -1,4 +1,4 @@
-use aide::axum::{ApiRouter, routing::delete};
+use aide::axum::ApiRouter;
 use mycorrhiza_common::misc::is_env_var_true;
 use std::sync::LazyLock;
 use tracing::info;
@@ -29,10 +29,7 @@ pub fn define_routes() -> ApiRouter {
     if !*PUBLIC_SAFE_MODE {
         info!("Public safe mode disabled, admin routes are enabled.");
         let admin_routes = admin_routes::create_admin_router();
-        app = app.nest("/admin", admin_routes).api_route(
-            "/public/cases/{state}/{jurisdiction_name}/{case_name}",
-            delete(s3_routes::delete_case_filing_from_s3),
-        );
+        app = app.nest("/admin", admin_routes);
     } else {
         info!("Public safe mode enabled, admin routes are disabled.");
     }
