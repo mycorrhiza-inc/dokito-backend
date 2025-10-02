@@ -265,7 +265,7 @@ async fn execute_processing_action(
 ) -> Result<ProcessingResponse, String> {
     // NOTE:
     // THIS FUNCTIONS REQUIRES THAT THE DATA HAS ALREDY BEEN
-    // UPOLOADED THROUGH THE RAW DOCKETS ENDPOINT
+    // UPLOADED THROUGH THE RAW DOCKETS ENDPOINT
 
     let s3_client = DIGITALOCEAN_S3.make_s3_client().await;
     let pool = get_dokito_pool().await.map_err(|e| e.to_string())?;
