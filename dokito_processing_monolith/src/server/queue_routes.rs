@@ -339,14 +339,14 @@ async fn processing_actions_by_ids(
     info!(
         state = %state,
         jurisdiction_name = %jurisdiction_name,
-        action = ?request.action,
-        id_count = request.docket_ids.len(),
+        action = ?action,
+        id_count = docket_ids.len(),
         "Processing by-ids request"
     );
 
     let jurisdiction = JurisdictionInfo::new_usa(&jurisdiction_name, &state);
     let docid_info = docket_ids.into_iter().map(RawDocketOrGovid::from).collect();
-    let response = execute_processing_action(docid_info, action, jurisdiction).await?;
+    let response = execute_processing_action(docid_info, action.into(), jurisdiction).await?;
     Ok(Json(response))
 }
 
@@ -360,7 +360,7 @@ pub async fn ingest_by_govid(
     info!(
         state = %state,
         jurisdiction_name = %jurisdiction_name,
-        action = ?request.action,
+        action = ?ProcessingActionIdOnly::IngestOnly,
         id_count = request.docket_ids.len(),
         "Ingest by-ids request"
     );
@@ -371,7 +371,7 @@ pub async fn ingest_by_govid(
         request.docket_ids,
     )
     .await?;
-    Ok(Json(result))
+    Ok(result)
 }
 
 pub async fn process_by_govid(
@@ -384,7 +384,7 @@ pub async fn process_by_govid(
     info!(
         state = %state,
         jurisdiction_name = %jurisdiction_name,
-        action = ?request.action,
+        action = ?ProcessingActionIdOnly::ProcessOnly,
         id_count = request.docket_ids.len(),
         "Processing by-ids request"
     );
@@ -397,7 +397,7 @@ pub async fn process_by_govid(
         request.docket_ids,
     )
     .await?;
-    Ok(Json(result))
+    Ok(result)
 }
 pub async fn process_and_ingest_by_govid(
     Path(JurisdictionPath {
@@ -409,7 +409,7 @@ pub async fn process_and_ingest_by_govid(
     info!(
         state = %state,
         jurisdiction_name = %jurisdiction_name,
-        action = ?request.action,
+        action = ?ProcessingActionIdOnly::ProcessAndIngest,
         id_count = request.docket_ids.len(),
         "Process and Ingest by-ids request"
     );
@@ -422,7 +422,7 @@ pub async fn process_and_ingest_by_govid(
         request.docket_ids,
     )
     .await?;
-    Ok(Json(result))
+    Ok(result)
 }
 
 pub async fn by_jurisdiction_endpoint(
