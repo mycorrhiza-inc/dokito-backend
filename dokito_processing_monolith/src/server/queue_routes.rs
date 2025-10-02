@@ -81,7 +81,6 @@ pub struct RawDocketsRequest {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ByIdsRequest {
-    pub action: ProcessingActionIdOnly,
     pub docket_ids: Vec<NonEmptyString>,
 }
 
@@ -264,17 +263,22 @@ async fn execute_processing_action(
     action: ProcessingAction,
     jurisdiction: JurisdictionInfo,
 ) -> Result<ProcessingResponse, String> {
+    // NOTE:
+    // THIS FUNCTIONS REQUIRES THAT THE DATA HAS ALREDY BEEN
+    // UPOLOADED THROUGH THE RAW DOCKETS ENDPOINT
+
     let s3_client = DIGITALOCEAN_S3.make_s3_client().await;
     let pool = get_dokito_pool().await.map_err(|e| e.to_string())?;
     let fixed_jurisdiction =
         FixedJurisdiction::try_from(&jurisdiction).map_err(|err| err.to_string())?;
 
-    let simultaneous_processers = Semaphore::new(2);
-    let completion_futures = gov_ids.into_iter().map(async |info| {
-        let _permit = simultaneous_processers.acquire().await;
+    let max_processes = Semaphore::new(2);
+    let all_actions = gov_ids.into_iter().map(async |info| {
+        let _permit = max_processes.acquire().await;
         execute_processing_single_action(info, action, fixed_jurisdiction, &s3_client, pool).await
     });
-    let results = join_all(completion_futures).await;
+
+    let action_results = join_all(all_actions).await;
 
     let mut response = ProcessingResponse {
         successfully_processed_dockets: vec![],
@@ -282,8 +286,8 @@ async fn execute_processing_action(
         error_count: 0,
     };
 
-    for result in results {
-        match result {
+    for outcome in action_results {
+        match outcome {
             Ok(data) => {
                 response.success_count += 1;
                 response.successfully_processed_dockets.push(data);
@@ -326,7 +330,51 @@ pub async fn raw_dockets_endpoint(
     Ok(Json(response))
 }
 
-pub async fn by_ids_endpoint(
+async fn processing_actions_by_ids(
+    state: String,
+    jurisdiction_name: String,
+    action: ProcessingActionIdOnly,
+    docket_ids: Vec<NonEmptyString>,
+) -> Result<Json<ProcessingResponse>, String> {
+    info!(
+        state = %state,
+        jurisdiction_name = %jurisdiction_name,
+        action = ?request.action,
+        id_count = request.docket_ids.len(),
+        "Processing by-ids request"
+    );
+
+    let jurisdiction = JurisdictionInfo::new_usa(&jurisdiction_name, &state);
+    let docid_info = docket_ids.into_iter().map(RawDocketOrGovid::from).collect();
+    let response = execute_processing_action(docid_info, action, jurisdiction).await?;
+    Ok(Json(response))
+}
+
+pub async fn ingest_by_govid(
+    Path(JurisdictionPath {
+        state,
+        jurisdiction_name,
+    }): Path<JurisdictionPath>,
+    Json(request): Json<ByIdsRequest>,
+) -> Result<Json<ProcessingResponse>, String> {
+    info!(
+        state = %state,
+        jurisdiction_name = %jurisdiction_name,
+        action = ?request.action,
+        id_count = request.docket_ids.len(),
+        "Ingest by-ids request"
+    );
+    let result = processing_actions_by_ids(
+        state,
+        jurisdiction_name,
+        ProcessingActionIdOnly::IngestOnly,
+        request.docket_ids,
+    )
+    .await?;
+    Ok(Json(result))
+}
+
+pub async fn process_by_govid(
     Path(JurisdictionPath {
         state,
         jurisdiction_name,
@@ -341,15 +389,40 @@ pub async fn by_ids_endpoint(
         "Processing by-ids request"
     );
 
-    let jurisdiction = JurisdictionInfo::new_usa(&jurisdiction_name, &state);
-    let docid_info = request
-        .docket_ids
-        .into_iter()
-        .map(RawDocketOrGovid::from)
-        .collect();
-    let response =
-        execute_processing_action(docid_info, request.action.into(), jurisdiction).await?;
-    Ok(Json(response))
+    let result = processing_actions_by_ids(
+        state,
+        jurisdiction_name,
+        // PPROCESS
+        ProcessingActionIdOnly::ProcessOnly,
+        request.docket_ids,
+    )
+    .await?;
+    Ok(Json(result))
+}
+pub async fn process_and_ingest_by_govid(
+    Path(JurisdictionPath {
+        state,
+        jurisdiction_name,
+    }): Path<JurisdictionPath>,
+    Json(request): Json<ByIdsRequest>,
+) -> Result<Json<ProcessingResponse>, String> {
+    info!(
+        state = %state,
+        jurisdiction_name = %jurisdiction_name,
+        action = ?request.action,
+        id_count = request.docket_ids.len(),
+        "Process and Ingest by-ids request"
+    );
+
+    let result = processing_actions_by_ids(
+        state,
+        jurisdiction_name,
+        // PROCESS AND INGEST
+        ProcessingActionIdOnly::ProcessAndIngest,
+        request.docket_ids,
+    )
+    .await?;
+    Ok(Json(result))
 }
 
 pub async fn by_jurisdiction_endpoint(
