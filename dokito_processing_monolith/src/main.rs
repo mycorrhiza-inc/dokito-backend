@@ -55,10 +55,12 @@ async fn main() -> anyhow::Result<()> {
         tracing::error!(err = %e,"NO INTERNET DETECTED");
         panic!("NO INTERNET DETECTED");
     }
+
     // check address early
     let addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), *PORT);
     info!(?addr, "Starting application on adress");
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+
     // initialise our subscriber
     let make_api = || {
         let routes = define_routes();
