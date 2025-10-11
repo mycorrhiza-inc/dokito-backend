@@ -50,8 +50,8 @@ CREATE TABLE public.dockets (
 );
 ALTER TABLE public.dockets ENABLE ROW LEVEL SECURITY;
 
--- Fillings
-CREATE TABLE public.fillings (
+-- filings
+CREATE TABLE public.filings (
   uuid uuid NOT NULL DEFAULT gen_random_uuid(),
   docket_uuid uuid NOT NULL,
   docket_govid text NOT NULL DEFAULT ''::text,
@@ -65,10 +65,10 @@ CREATE TABLE public.fillings (
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   filling_govid text NOT NULL DEFAULT ''::text,
   openscrapers_id text NOT NULL UNIQUE,
-  CONSTRAINT fillings_pkey PRIMARY KEY (uuid),
-  CONSTRAINT fillings_docket_uuid_fkey FOREIGN KEY (docket_uuid) REFERENCES public.dockets(uuid) ON UPDATE CASCADE ON DELETE CASCADE
+  CONSTRAINT filings_pkey PRIMARY KEY (uuid),
+  CONSTRAINT filings_docket_uuid_fkey FOREIGN KEY (docket_uuid) REFERENCES public.dockets(uuid) ON UPDATE CASCADE ON DELETE CASCADE
 );
-ALTER TABLE public.fillings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.filings ENABLE ROW LEVEL SECURITY;
 
 -- Attachments
 CREATE TABLE public.attachments (
@@ -85,7 +85,7 @@ CREATE TABLE public.attachments (
   attachment_url text NOT NULL DEFAULT ''::text,
   openscrapers_id text NOT NULL UNIQUE,
   CONSTRAINT attachments_pkey PRIMARY KEY (uuid),
-  CONSTRAINT attachments_parent_filling_uuid_fkey FOREIGN KEY (parent_filling_uuid) REFERENCES public.fillings(uuid) ON UPDATE CASCADE ON DELETE CASCADE
+  CONSTRAINT attachments_parent_filling_uuid_fkey FOREIGN KEY (parent_filling_uuid) REFERENCES public.filings(uuid) ON UPDATE CASCADE ON DELETE CASCADE
 );
 ALTER TABLE public.attachments ENABLE ROW LEVEL SECURITY;
 
@@ -101,30 +101,30 @@ CREATE TABLE public.docket_petitioned_by_org (
 );
 ALTER TABLE public.docket_petitioned_by_org ENABLE ROW LEVEL SECURITY;
 
--- Fillings filed by individual
-CREATE TABLE public.fillings_filed_by_individual (
+-- filings filed by individual
+CREATE TABLE public.filings_filed_by_individual (
   uuid uuid NOT NULL DEFAULT gen_random_uuid(),
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   human_uuid uuid NOT NULL,
   filling_uuid uuid NOT NULL,
-  CONSTRAINT fillings_filed_by_individual_pkey PRIMARY KEY (uuid),
-  CONSTRAINT fillings_filed_by_individual_human_uuid_fkey FOREIGN KEY (human_uuid) REFERENCES public.humans(uuid) ON UPDATE CASCADE ON DELETE CASCADE,
-  CONSTRAINT fillings_filed_by_individual_filling_uuid_fkey FOREIGN KEY (filling_uuid) REFERENCES public.fillings(uuid) ON UPDATE CASCADE ON DELETE CASCADE
+  CONSTRAINT filings_filed_by_individual_pkey PRIMARY KEY (uuid),
+  CONSTRAINT filings_filed_by_individual_human_uuid_fkey FOREIGN KEY (human_uuid) REFERENCES public.humans(uuid) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT filings_filed_by_individual_filling_uuid_fkey FOREIGN KEY (filling_uuid) REFERENCES public.filings(uuid) ON UPDATE CASCADE ON DELETE CASCADE
 );
-ALTER TABLE public.fillings_filed_by_individual ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.filings_filed_by_individual ENABLE ROW LEVEL SECURITY;
 
 
--- Fillings on behalf of org relation
-CREATE TABLE public.fillings_on_behalf_of_org_relation (
+-- filings on behalf of org relation
+CREATE TABLE public.filings_on_behalf_of_org_relation (
   relation_uuid uuid NOT NULL DEFAULT gen_random_uuid(),
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   filling_uuid uuid NOT NULL DEFAULT gen_random_uuid(),
   author_organization_uuid uuid NOT NULL DEFAULT gen_random_uuid(),
-  CONSTRAINT fillings_on_behalf_of_org_relation_pkey PRIMARY KEY (relation_uuid),
-  CONSTRAINT fillings_organization_authors_rel_author_organization_uuid_fkey FOREIGN KEY (author_organization_uuid) REFERENCES public.organizations(uuid) ON UPDATE CASCADE ON DELETE CASCADE,
-  CONSTRAINT fillings_organization_authors_relation_filling_uuid_fkey FOREIGN KEY (filling_uuid) REFERENCES public.fillings(uuid) ON UPDATE CASCADE ON DELETE CASCADE
+  CONSTRAINT filings_on_behalf_of_org_relation_pkey PRIMARY KEY (relation_uuid),
+  CONSTRAINT filings_organization_authors_rel_author_organization_uuid_fkey FOREIGN KEY (author_organization_uuid) REFERENCES public.organizations(uuid) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT filings_organization_authors_relation_filling_uuid_fkey FOREIGN KEY (filling_uuid) REFERENCES public.filings(uuid) ON UPDATE CASCADE ON DELETE CASCADE
 );
-ALTER TABLE public.fillings_on_behalf_of_org_relation ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.filings_on_behalf_of_org_relation ENABLE ROW LEVEL SECURITY;
 
 -- Individual offical party to docket
 CREATE TABLE public.individual_offical_party_to_docket (

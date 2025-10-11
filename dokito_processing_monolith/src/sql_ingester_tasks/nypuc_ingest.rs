@@ -383,7 +383,7 @@ pub async fn ingest_sql_fixed_jurisdiction_case(
                 .map(|s| s.truncated_org_name.to_string())
                 .collect::<Vec<_>>();
             let filling_uuid: Uuid = query_scalar(
-            &format!("INSERT INTO {pg_schema}.fillings (uuid, docket_uuid, docket_govid, individual_author_strings, organization_author_strings, filed_date, filling_type, filling_name, filling_description, openscrapers_id)
+            &format!("INSERT INTO {pg_schema}.filings (uuid, docket_uuid, docket_govid, individual_author_strings, organization_author_strings, filed_date, filling_type, filling_name, filling_description, openscrapers_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
              ON CONFLICT (uuid) DO UPDATE SET
              docket_uuid = EXCLUDED.docket_uuid,

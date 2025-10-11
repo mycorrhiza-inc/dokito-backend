@@ -50,22 +50,22 @@ fn match_individual_attach<'a>(
     }
     None
 }
-pub fn match_raw_fillings_to_processed_fillings(
-    raw_fillings: Vec<RawGenericFiling>,
-    processed_fillings: Option<Vec<ProcessedGenericFiling>>,
+pub fn match_raw_filings_to_processed_filings(
+    raw_filings: Vec<RawGenericFiling>,
+    processed_filings: Option<Vec<ProcessedGenericFiling>>,
 ) -> Vec<(RawGenericFiling, Option<ProcessedGenericFiling>)> {
-    let Some(processed_fillings) = processed_fillings.filter(|v| !v.is_empty()) else {
-        return raw_fillings
+    let Some(processed_filings) = processed_filings.filter(|v| !v.is_empty()) else {
+        return raw_filings
             .into_iter()
             .map(|filling| (filling, None))
             .collect();
     };
-    let mut processed_filling_map = processed_fillings
+    let mut processed_filling_map = processed_filings
         .into_iter()
         .map(|f| (f.object_uuid, f))
         .collect();
-    let mut return_vec = Vec::with_capacity(raw_fillings.len());
-    for attach in raw_fillings {
+    let mut return_vec = Vec::with_capacity(raw_filings.len());
+    for attach in raw_filings {
         let processed_option = match_individual_filling(&attach, &processed_filling_map);
 
         if let Some(processed_actual) = processed_option {
@@ -80,12 +80,12 @@ pub fn match_raw_fillings_to_processed_fillings(
 }
 fn match_individual_filling<'a>(
     raw_filling: &RawGenericFiling,
-    processed_fillings: &'a HashMap<Uuid, ProcessedGenericFiling>,
+    processed_filings: &'a HashMap<Uuid, ProcessedGenericFiling>,
 ) -> Option<&'a ProcessedGenericFiling> {
     let govid = &*raw_filling.filling_govid;
     if !govid.is_empty() {
         // iterate through the hashmap and find the correct result.
-        let found_result = processed_fillings.iter().find_map(|(_, filling)| {
+        let found_result = processed_filings.iter().find_map(|(_, filling)| {
             match filling.filling_govid == govid {
                 false => None,
                 true => Some(filling),

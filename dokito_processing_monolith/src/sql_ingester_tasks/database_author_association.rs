@@ -263,7 +263,7 @@ pub async fn upload_filling_organization_author(
 
     let pg_schema = fixed_jur.get_postgres_schema_name();
     sqlx::query(&format!(
-            "INSERT INTO {pg_schema}.fillings_on_behalf_of_org_relation (author_organization_uuid, filling_uuid) VALUES ($1, $2)"
+            "INSERT INTO {pg_schema}.filings_on_behalf_of_org_relation (author_organization_uuid, filling_uuid) VALUES ($1, $2)"
         ))
         .bind(org_uuid)
         .bind(parent_filling_uuid)
@@ -290,7 +290,7 @@ pub async fn upload_filling_human_author(
 
     let pg_schema = fixed_jur.get_postgres_schema_name();
     sqlx::query(&format!(
-        "INSERT INTO {pg_schema}.fillings_filed_by_individual (human_uuid, filling_uuid) VALUES ($1, $2)"
+        "INSERT INTO {pg_schema}.filings_filed_by_individual (human_uuid, filling_uuid) VALUES ($1, $2)"
     ))
     .bind(upload_author.object_uuid)
     .bind(parent_filling_uuid)

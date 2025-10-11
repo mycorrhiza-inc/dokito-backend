@@ -112,7 +112,7 @@ Uses LLMs to process author names:
 
 Matches raw data with processed data for caching:
 
-1. `match_raw_fillings_to_processed_fillings` - Matches raw filings to processed filings
+1. `match_raw_filings_to_processed_filings` - Matches raw filings to processed filings
 2. `match_raw_attaches_to_processed_attaches` - Matches raw attachments to processed attachments
 
 ## S3 Integration (src/s3_stuff.rs)
