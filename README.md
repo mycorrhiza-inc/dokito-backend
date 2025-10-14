@@ -1,5 +1,7 @@
 # dokito-backend
 
+## How to process documents.
+
 A Rust-based backend service for the Dokito project.
 
 ## Quick Start
@@ -54,4 +56,3 @@ or alternatively if that isnt working just run:
 ```bash
 devenv shell
 ```
-

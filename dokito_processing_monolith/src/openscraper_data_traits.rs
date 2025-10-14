@@ -155,31 +155,6 @@ impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
         // 10,000 filings, but it can process 60 dockets at the same time with one filling each.
         let mut processed_filings = join_all(processed_filings_futures).await;
 
-        fn parse_first_name_and_title(raw_first_name: &str) -> (String, String) {
-            let trimmed = raw_first_name.trim();
-            let capitals: Vec<(usize, char)> = trimmed
-                .char_indices()
-                .filter(|(_, c)| c.is_uppercase())
-                .collect();
-
-            if capitals.len() > 2 {
-                // Split on the second capital letter
-                let split_pos = capitals[1].0;
-                let first_name = trimmed[..split_pos].trim().to_string();
-                let title = trimmed[split_pos..].trim().to_string();
-                (first_name, title)
-            } else {
-                (trimmed.to_string(), String::new())
-            }
-        }
-
-        fn clean_last_name(raw_last_name: &str) -> String {
-            raw_last_name
-                .trim()
-                .trim_end_matches(',')
-                .trim()
-                .to_string()
-        }
         fn raw_party_to_human(rawparty: RawGenericParty) -> Option<ProcessedGenericHuman> {
             let raw_name = &*rawparty.name;
 
@@ -205,22 +180,13 @@ impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
                 return None;
             };
 
-            let (clean_first_name, extracted_title) =
-                parse_first_name_and_title(&rawparty.western_human_first_name);
-            let clean_last_name = clean_last_name(&rawparty.western_human_last_name);
-
-            let final_title =
-                if rawparty.human_title.trim().is_empty() && !extracted_title.is_empty() {
-                    extracted_title
-                } else {
-                    rawparty.human_title
-                };
+            let final_title = rawparty.human_title;
 
             let processed_party_huamn = ProcessedGenericHuman {
                 object_uuid: Uuid::nil(),
                 human_name: nonempty_name,
-                western_first_name: clean_first_name,
-                western_last_name: clean_last_name,
+                western_first_name: rawparty.western_human_last_name,
+                western_last_name: rawparty.western_human_first_name,
                 contact_emails: vec![rawparty.contact_email],
                 contact_phone_numbers: vec![rawparty.contact_phone],
                 contact_addresses: vec![rawparty.contact_address],
@@ -246,6 +212,7 @@ impl ProcessFrom<RawGenericDocket> for ProcessedGenericDocket {
         tracing::info!(case_parties_length = %processed_parties.len(),"Processed parties has final length");
         let pool = get_dokito_pool().await.unwrap();
 
+        // TODO: This could be made concurrent if its a bottleneck
         for party in processed_parties.iter_mut() {
             let _res = associate_individual_author_with_name(party, fixed_jurisdiction, pool).await;
         }
