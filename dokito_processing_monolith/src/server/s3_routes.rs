@@ -24,7 +24,7 @@ use crate::{
     jurisdiction_schema_mapping::FixedJurisdiction,
     s3_stuff::{
         DocketAddress, delete_openscrapers_s3_object, download_openscrapers_object,
-        get_jurisdiction_prefix, list_processed_cases_for_jurisdiction, upload_object,
+        get_jurisdiction_prefix, upload_object,
     },
     sql_ingester_tasks::dokito_sql_connection::get_dokito_pool,
     types::{
@@ -257,42 +257,6 @@ pub struct JurisdictionPath {
     pub state: String,
     /// The name of the jurisdiction.
     pub jurisdiction_name: String,
-}
-
-pub async fn handle_caselist_jurisdiction_fetch_all(
-    Path(JurisdictionPath {
-        state,
-        jurisdiction_name,
-    }): Path<JurisdictionPath>,
-) -> impl IntoApiResponse {
-    info!(state = %state, jurisdiction = %jurisdiction_name, "Request received for case list");
-    let s3_client = crate::s3_stuff::make_s3_client().await;
-
-    info!("Sucessfully created s3 client.");
-    let country = "usa".to_string(); // Or get from somewhere else
-    let jur_info = JurisdictionInfo {
-        state,
-        country,
-        jurisdiction: jurisdiction_name,
-    };
-    let result = list_processed_cases_for_jurisdiction(&s3_client, &jur_info).await;
-    info!("Completed call to s3 to get jurisdiction list.");
-    match result {
-        Ok(cases) => {
-            info!(state = %jur_info.state, jurisdiction = %jur_info.jurisdiction, "Successfully fetched case list");
-            Json(&cases).into_response()
-        }
-        Err(e) => {
-            error!(state = %jur_info.state, jurisdiction = %jur_info.jurisdiction, error = %e, "Error fetching case list");
-            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
-        }
-    }
-}
-
-pub fn handle_caselist_jurisdiction_fetch_all_docs(op: TransformOperation) -> TransformOperation {
-    op.description("List all cases for a jurisdiction.")
-        .response::<200, Json<Vec<String>>>()
-        .response_with::<500, String, _>(|res| res.description("Error listing cases."))
 }
 
 #[derive(Deserialize, JsonSchema)]

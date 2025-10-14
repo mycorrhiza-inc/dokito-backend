@@ -6,7 +6,10 @@ use mycorrhiza_common::tasks::routing::handle_default_task_route;
 
 use crate::{
     indexes::attachment_url_index::RegenerateUrlAttachIndex,
-    server::scraper_check_completed::get_completed_casedata_differential,
+    server::scraper_check_completed::{
+        get_completed_casedata_differential, get_casedata_differential_with_location,
+        get_raw_caselist,
+    },
 };
 use crate::{indexes::attachment_url_index::handle_attachment_url_lookup, server::s3_routes};
 
@@ -19,6 +22,14 @@ pub fn create_public_router() -> ApiRouter {
         .api_route(
             "/caselist/{state}/{jurisdiction_name}/casedata_differential",
             post(get_completed_casedata_differential),
+        )
+        .api_route(
+            "/caselist/{state}/{jurisdiction_name}/{location}/casedata_differential",
+            post(get_casedata_differential_with_location),
+        )
+        .api_route(
+            "/caselist/{state}/{jurisdiction_name}/{location}/raw",
+            get(get_raw_caselist),
         )
         .api_route(
             "/raw_attachments/{blake2b_hash}/obj",
